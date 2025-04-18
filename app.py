@@ -54,8 +54,12 @@ try:
     # 📊 Indikatoren berechnen
     df["EMA20"] = ta.ema(df["Close"], length=20)
     df["RSI"] = ta.rsi(df["Close"], length=14)
+
     macd = ta.macd(df["Close"])
-    df["MACD"] = macd["MACD_12_26_9"] if "MACD_12_26_9" in macd else None
+    if macd is not None and isinstance(macd, pd.DataFrame) and "MACD_12_26_9" in macd.columns:
+        df["MACD"] = macd["MACD_12_26_9"]
+    else:
+        df["MACD"] = pd.Series([None]*len(df))
 
     # 📉 Candlestick-Chart
     st.subheader("🕯️ Kursverlauf – Candlestick")
@@ -90,4 +94,4 @@ try:
     st.success("✅ Live-Daten & Chart erfolgreich geladen.")
 
 except Exception as e:
-    st.error(f"❌ Fehler: {e}")
+    st.error(f"❌ Fehler beim Laden oder Verarbeiten: {e}")
