@@ -1,58 +1,71 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import pandas_ta as ta
 
 st.set_page_config(layout="wide")
-st.markdown("<h1 style='text-align: center;'>📈 KI-Trading App – Live Analyse</h1>", unsafe_allow_html=True)
+st.title("📈 KI-Trading App – Live Analyse")
 
-asset = st.selectbox("🔎 Wähle ein Asset", ["AAPL", "TSLA", "NVDA", "XAUUSD", "XRP-USD"])
-st.markdown(f"### 📍 Gewähltes Asset: `{asset}`")
+# Kategorien und Assets
+categories = {
+    "Krypto": ["BTC-USD", "ETH-USD", "XRP-USD"],
+    "Aktien": ["AAPL", "TSLA", "NVDA"],
+    "Rohstoffe": ["XAUUSD", "CL=F"]
+}
 
-data = yf.download(asset, period="1d", interval="1m")
+# Kategorie auswählen
+category = st.selectbox("Kategorie wählen", list(categories.keys()))
 
-# MultiIndex fixen, falls vorhanden
-if isinstance(data.columns, pd.MultiIndex):
-    data.columns = ['_'.join(col).strip() for col in data.columns.values]
+# Suchfeld mit Dropdown
+query = st.text_input("Suche nach Asset (z.B. TSLA)", "")
+filtered_assets = [asset for asset in categories[category] if query.upper() in asset]
+asset = st.selectbox("Asset auswählen", filtered_assets or categories[category])
 
-if data is None or data.empty:
-    st.error("❌ Keine Daten verfügbar.")
-    st.stop()
+# Intervallauswahl
+interval = st.selectbox("Zeitintervall", ["1m", "5m", "15m", "1h", "4h", "1d"])
 
-close_col = [col for col in data.columns if "Close" in col][0]
+# Daten laden
+try:
+    data = yf.download(asset, period="1d", interval=interval)
+    st.markdown(f"### 📍 Gewähltes Asset: {asset}")
+    st.dataframe(data.tail(5))
 
-# RSI
-delta = data[close_col].diff()
-gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-rs = gain / loss
-data["RSI"] = 100 - (100 / (1 + rs))
+    # Indikatoren berechnen
+    data["EMA20"] = ta.ema(data["Close"], length=20)
+    data["RSI"] = ta.rsi(data["Close"], length=14)
+    macd_df = ta.macd(data["Close"])
 
-# MACD
-ema12 = data[close_col].ewm(span=12, adjust=False).mean()
-ema26 = data[close_col].ewm(span=26, adjust=False).mean()
-data["MACD"] = ema12 - ema26
-data["Signal"] = data["MACD"].ewm(span=9, adjust=False).mean()
+    if macd_df is not None and "MACD_12_26_9" in macd_df.columns:
+        data["MACD"] = macd_df["MACD_12_26_9"]
+        data["Signal"] = macd_df["MACDs_12_26_9"]
+    else:
+        st.warning("⚠️ MACD konnte nicht berechnet werden.")
 
-# BUY-/SELL-Signale
-data["BUY"] = (data["MACD"] > data["Signal"]) & (data["MACD"].shift(1) <= data["Signal"].shift(1))
-data["SELL"] = (data["MACD"] < data["Signal"]) & (data["MACD"].shift(1) >= data["Signal"].shift(1))
+    # Chart anzeigen
+    st.subheader("📊 Kursverlauf (Close & EMA20)")
+    st.line_chart(data[["Close", "EMA20"]].dropna())
 
-col1, col2 = st.columns([2, 1])
-with col1:
-    st.subheader("📊 Kursverlauf (Close)")
-    st.line_chart(data[close_col])
+    # RSI farblich markieren
+    latest_rsi = data["RSI"].iloc[-1] if "RSI" in data else None
+    rsi_color = "white"
+    if latest_rsi is not None:
+        if latest_rsi < 30:
+            rsi_color = "red"
+        elif latest_rsi > 70:
+            rsi_color = "green"
+    st.markdown(f"<div style='color:{rsi_color}'>RSI: {latest_rsi:.2f}</div>", unsafe_allow_html=True)
 
-with col2:
-    st.subheader("📉 RSI")
-    st.line_chart(data["RSI"])
+    # MACD und Signal
+    if "MACD" in data and "Signal" in data:
+        st.subheader("📈 MACD & Signal")
+        st.line_chart(data[["MACD", "Signal"]].dropna())
 
-st.subheader("📈 MACD & Signal")
-st.line_chart(data[["MACD", "Signal"]].dropna())
+    # Veränderung in %
+    if len(data) > 1:
+        change_1d = ((data["Close"].iloc[-1] - data["Close"].iloc[0]) / data["Close"].iloc[0]) * 100
+        st.markdown(f"**Veränderung (heute):** {change_1d:.2f}%")
 
-st.subheader("🟢 BUY / 🔴 SELL Punkte")
-buy_signals = data[data["BUY"]]
-sell_signals = data[data["SELL"]]
-st.dataframe(pd.concat([buy_signals[[close_col]].rename(columns={close_col: "BUY-Signal"}),
-                        sell_signals[[close_col]].rename(columns={close_col: "SELL-Signal"})], axis=1))
+except Exception as e:
+    st.error(f"Fehler beim Laden oder Berechnen der Daten: {e}")
 
-st.success("✅ Alle Module funktionieren jetzt stabil. KI-Prognose kann vorbereitet werden.")
+st.info("✅ Grundfunktionen aktiv. KI-Analyse, BUY-/SELL und Candle-Prognose folgen.")
