@@ -25,7 +25,7 @@ st.markdown(f"### 📍 Gewähltes Asset: `{asset}`")
 
 # --- Binance Klines URL für Krypto (keine API-Keys notwendig!) ---
 def get_binance_ohlcv(symbol, interval="1m", limit=200):
-    url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
+    url = f"https://api1.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
     response = requests.get(url)
     response.raise_for_status()
     data = response.json()
