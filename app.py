@@ -12,7 +12,13 @@ data = yf.download(asset, period="1d", interval="1m")
 data["EMA20"] = ta.ema(data["Close"], length=20)
 data["RSI"] = ta.rsi(data["Close"], length=14)
 macd = ta.macd(data["Close"])
-data["MACD"] = macd["MACD_12_26_9"]
+macd = ta.macd(data["Close"])
+
+if macd is not None and "MACD_12_26_9" in macd.columns:
+    data["MACD"] = macd["MACD_12_26_9"]
+else:
+    st.error("MACD konnte nicht berechnet werden – Spalte fehlt oder Daten unvollständig.")
+    st.stop()
 data["MACDs"] = macd["MACDs_12_26_9"]
 
 st.subheader(f"📊 Chart für: {asset}")
