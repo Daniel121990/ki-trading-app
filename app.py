@@ -1,79 +1,90 @@
 import streamlit as st
-import yfinance as yf
 import pandas as pd
-import pandas_ta as ta
+import numpy as np
 import plotly.graph_objects as go
+from binance.client import Client
+from binance.exceptions import BinanceAPIException
+import pandas_ta as ta
+
+# Binance Setup
+client = Client()
 
 st.set_page_config(layout="wide")
-st.title("📈 KI-Trading App – Live Analyse & Prognose")
+st.title("📊 KI-Trading App – Live Analyse & Prognose")
 
 # Kategorien
-asset_categories = {
-    "Krypto": ["BTC-USD", "ETH-USD", "XRP-USD", "BNB-USD", "SOL-USD", "ADA-USD", "DOGE-USD", "DOT-USD", "AVAX-USD", "TRX-USD",
-               "MATIC-USD", "LTC-USD", "SHIB-USD", "BCH-USD", "LINK-USD", "XLM-USD", "ATOM-USD", "ETC-USD", "NEAR-USD", "HBAR-USD"],
-
-    "Aktien": ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "BRK-B", "V", "JNJ",
-               "JPM", "WMT", "UNH", "PG", "XOM", "MA", "HD", "CVX", "PFE", "INTC"],
-
-    "Rohstoffe": ["XAUUSD", "XAGUSD", "CL=F", "BZ=F", "NG=F", "KC=F", "CC=F", "CT=F", "ZC=F", "ZS=F",
-                   "ZW=F", "HG=F", "PA=F", "PL=F", "SB=F", "HO=F", "RB=F", "LBS=F", "ZR=F", "ZO=F"]
+kategorien = {
+    "Krypto": ["BTCUSDT", "ETHUSDT", "XRPUSDT", "BNBUSDT", "SOLUSDT"],
+    "Aktien": ["AAPL", "TSLA", "NVDA", "MSFT", "GOOGL"],
+    "Rohstoffe": ["GC=F", "CL=F", "SI=F", "HG=F", "ZC=F"]
 }
 
-# Kategorie und Asset-Auswahl
-selected_category = st.selectbox("Wähle eine Kategorie", list(asset_categories.keys()))
-assets = asset_categories[selected_category]
-asset = st.selectbox("🔎 Wähle ein Asset", assets)
-
-st.markdown(f"📍 Gewähltes Asset: **{asset}**")
+kategorie = st.selectbox("🔍 Wähle eine Kategorie", list(kategorien.keys()))
+asset = st.selectbox("📈 Wähle ein Asset", kategorien[kategorie])
+interval = st.selectbox("⏱️ Zeitintervall", ["1m", "5m", "15m", "1h", "4h", "1d"])
 
 try:
-    data = yf.download(asset, period="1d", interval="1m")
-    if data is None or data.empty:
-        st.error("❌ Daten ungültig oder leer.")
+    if kategorie == "Krypto":
+        klines = client.get_klines(symbol=asset, interval=interval, limit=200)
+        df = pd.DataFrame(klines, columns=[
+            "Open time", "Open", "High", "Low", "Close", "Volume",
+            "Close time", "Quote asset volume", "Number of trades",
+            "Taker buy base", "Taker buy quote", "Ignore"
+        ])
+
+        df = df[["Open time", "Open", "High", "Low", "Close", "Volume"]].copy()
+        df["Open time"] = pd.to_datetime(df["Open time"], unit='ms')
+        df.set_index("Open time", inplace=True)
+        df = df.astype(float)
     else:
-        # Technische Indikatoren
-        data["EMA20"] = ta.ema(data["Close"], length=20)
-        data["RSI"] = ta.rsi(data["Close"], length=14)
-        macd = ta.macd(data["Close"])
-        if macd is not None and "MACD_12_26_9" in macd.columns:
-            data["MACD"] = macd["MACD_12_26_9"]
-            data["Signal"] = macd["MACDs_12_26_9"]
+        df = pd.DataFrame()
+
+    st.markdown(f"### 🔹 Gewähltes Asset: `{asset}`")
+
+    # Chart anzeigen
+    fig = go.Figure(data=[go.Candlestick(
+        x=df.index,
+        open=df['Open'],
+        high=df['High'],
+        low=df['Low'],
+        close=df['Close']
+    )])
+    fig.update_layout(margin=dict(l=10, r=10, t=20, b=10), height=400)
+    st.markdown("#### 🌉 Kursverlauf (1-Minuten-Kerzen)")
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Indikatoren berechnen
+    rsi = ta.rsi(df['Close'], length=14)
+    ema = ta.ema(df['Close'], length=20)
+    macd = ta.macd(df['Close'])
+
+    st.markdown("#### 🔍 Indikatoren")
+    def colorize(value, low, high):
+        if value < low:
+            return f"<span style='color:red'>{value:.2f}</span>"
+        elif value > high:
+            return f"<span style='color:limegreen'>{value:.2f}</span>"
         else:
-            st.warning("⚠️ MACD konnte nicht berechnet werden – Spalte fehlt oder Daten unvollständig.")
+            return f"<span style='color:white'>{value:.2f}</span>"
 
-        # Chart
-        st.subheader("📊 Kursverlauf (1-Minuten-Kerzen)")
-        fig = go.Figure()
-        fig.add_trace(go.Candlestick(x=data.index,
-                                     open=data['Open'],
-                                     high=data['High'],
-                                     low=data['Low'],
-                                     close=data['Close'],
-                                     name='Candles'))
-        fig.update_layout(xaxis_rangeslider_visible=False, height=400)
-        st.plotly_chart(fig, use_container_width=True)
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown("**RSI**")
+        st.markdown(colorize(rsi.iloc[-1], 30, 70), unsafe_allow_html=True)
+    with col2:
+        st.markdown("**EMA20**")
+        st.markdown(colorize(ema.iloc[-1], df['Close'].min(), df['Close'].max()), unsafe_allow_html=True)
+    with col3:
+        st.markdown("**MACD**")
+        if macd is not None and "MACD_12_26_9" in macd.columns:
+            macd_val = macd["MACD_12_26_9"].iloc[-1]
+            st.markdown(colorize(macd_val, -0.5, 0.5), unsafe_allow_html=True)
+        else:
+            st.warning("MACD konnte nicht berechnet werden – Spalte fehlt oder Daten unvollständig.")
 
-        # Indikatoren-Werte mit Farbe
-        def color_value(value, good_range, neutral_range):
-            if value >= good_range[0] and value <= good_range[1]:
-                return f"<span style='color:green'><b>{value:.2f}</b></span>"
-            elif value >= neutral_range[0] and value <= neutral_range[1]:
-                return f"<span style='color:white'>{value:.2f}</span>"
-            else:
-                return f"<span style='color:red'><b>{value:.2f}</b></span>"
+    st.success("✅ Live Daten und Indikatoren geladen.")
 
-        st.markdown("""
-        ### 🔍 Indikatoren
-        """, unsafe_allow_html=True)
-        rsi_val = data['RSI'].iloc[-1] if 'RSI' in data.columns else None
-        ema_val = data['EMA20'].iloc[-1] if 'EMA20' in data.columns else None
-        macd_val = data['MACD'].iloc[-1] if 'MACD' in data.columns else None
-
-        st.markdown(f"- **RSI**: {color_value(rsi_val, (55, 70), (45, 55))}" if rsi_val else "- RSI: n/a", unsafe_allow_html=True)
-        st.markdown(f"- **EMA20**: {color_value(ema_val, (0, float('inf')), (0, float('inf')))}" if ema_val else "- EMA20: n/a", unsafe_allow_html=True)
-        st.markdown(f"- **MACD**: {color_value(macd_val, (0, float('inf')), (-0.5, 0))}" if macd_val else "- MACD: n/a", unsafe_allow_html=True)
-
-        st.success("✅ Live-Daten und Indikatoren geladen.")
-
+except BinanceAPIException as e:
+    st.error(f"Binance API-Fehler: {str(e)}")
 except Exception as e:
-    st.error(f"Fehler beim Laden oder Berechnen der Daten: {e}")
+    st.error(f"❌ Daten konnten nicht geladen werden. Bitte Symbol prüfen.\n{str(e)}")
