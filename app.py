@@ -1,93 +1,79 @@
-# KI-Trading App – Live Kerzenchart & Analyse (Binance, stabil, ohne API-Key)
-
 import streamlit as st
-import requests
+import yfinance as yf
 import pandas as pd
+import pandas_ta as ta
 import plotly.graph_objects as go
 
 st.set_page_config(layout="wide")
-st.title("📊 KI-Trading App – Live Kerzenchart & Analyse")
+st.title("📈 KI-Trading App – Live Analyse & Prognose")
 
 # Kategorien
-kategorien = {
-    "Krypto": ["BTCUSDT", "ETHUSDT", "XRPUSDT", "BNBUSDT"],
-    "Aktien": ["TSLA", "AAPL", "NVDA"],
-    "Rohstoffe": ["XAUUSD", "XAGUSD"]
+asset_categories = {
+    "Krypto": ["BTC-USD", "ETH-USD", "XRP-USD", "BNB-USD", "SOL-USD", "ADA-USD", "DOGE-USD", "DOT-USD", "AVAX-USD", "TRX-USD",
+               "MATIC-USD", "LTC-USD", "SHIB-USD", "BCH-USD", "LINK-USD", "XLM-USD", "ATOM-USD", "ETC-USD", "NEAR-USD", "HBAR-USD"],
+
+    "Aktien": ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "BRK-B", "V", "JNJ",
+               "JPM", "WMT", "UNH", "PG", "XOM", "MA", "HD", "CVX", "PFE", "INTC"],
+
+    "Rohstoffe": ["XAUUSD", "XAGUSD", "CL=F", "BZ=F", "NG=F", "KC=F", "CC=F", "CT=F", "ZC=F", "ZS=F",
+                   "ZW=F", "HG=F", "PA=F", "PL=F", "SB=F", "HO=F", "RB=F", "LBS=F", "ZR=F", "ZO=F"]
 }
 
-# Auswahlfelder
-col1, col2, col3 = st.columns(3)
-with col1:
-    kategorie = st.selectbox("Kategorie wählen", kategorien.keys())
-with col2:
-    suche = st.text_input("🔍 Suche nach Asset (z. B. TSLA, ETHUSDT)")
-with col3:
-    interval = st.selectbox("🕒 Zeitintervall", ["1m", "5m", "15m", "1h", "4h", "1d"])
+# Kategorie und Asset-Auswahl
+selected_category = st.selectbox("Wähle eine Kategorie", list(asset_categories.keys()))
+assets = asset_categories[selected_category]
+asset = st.selectbox("🔎 Wähle ein Asset", assets)
 
-# Asset-Auswahl
-assets = kategorien[kategorie]
-if suche:
-    assets = [s for s in assets if suche.upper() in s.upper() or suche == ""]
-asset = st.selectbox("Asset auswählen", assets)
+st.markdown(f"📍 Gewähltes Asset: **{asset}**")
 
-# Binance API Endpoint
-url = f"https://api.binance.com/api/v3/klines?symbol={asset}&interval={interval}&limit=200"
 try:
-    response = requests.get(url)
-    response.raise_for_status()
-    klines = response.json()
+    data = yf.download(asset, period="1d", interval="1m")
+    if data is None or data.empty:
+        st.error("❌ Daten ungültig oder leer.")
+    else:
+        # Technische Indikatoren
+        data["EMA20"] = ta.ema(data["Close"], length=20)
+        data["RSI"] = ta.rsi(data["Close"], length=14)
+        macd = ta.macd(data["Close"])
+        if macd is not None and "MACD_12_26_9" in macd.columns:
+            data["MACD"] = macd["MACD_12_26_9"]
+            data["Signal"] = macd["MACDs_12_26_9"]
+        else:
+            st.warning("⚠️ MACD konnte nicht berechnet werden – Spalte fehlt oder Daten unvollständig.")
 
-    df = pd.DataFrame(klines, columns=[
-        "time", "open", "high", "low", "close", "volume",
-        "close_time", "quote_asset_volume", "number_of_trades",
-        "taker_buy_base", "taker_buy_quote", "ignore"
-    ])
+        # Chart
+        st.subheader("📊 Kursverlauf (1-Minuten-Kerzen)")
+        fig = go.Figure()
+        fig.add_trace(go.Candlestick(x=data.index,
+                                     open=data['Open'],
+                                     high=data['High'],
+                                     low=data['Low'],
+                                     close=data['Close'],
+                                     name='Candles'))
+        fig.update_layout(xaxis_rangeslider_visible=False, height=400)
+        st.plotly_chart(fig, use_container_width=True)
 
-    df["time"] = pd.to_datetime(df["time"], unit="ms")
-    df.set_index("time", inplace=True)
-    df = df.astype(float)
+        # Indikatoren-Werte mit Farbe
+        def color_value(value, good_range, neutral_range):
+            if value >= good_range[0] and value <= good_range[1]:
+                return f"<span style='color:green'><b>{value:.2f}</b></span>"
+            elif value >= neutral_range[0] and value <= neutral_range[1]:
+                return f"<span style='color:white'>{value:.2f}</span>"
+            else:
+                return f"<span style='color:red'><b>{value:.2f}</b></span>"
 
-    # Werte berechnen
-    df["EMA20"] = df["close"].ewm(span=20).mean()
-    df["RSI"] = 100 - (100 / (1 + df["close"].pct_change().rolling(14).apply(lambda x: (x[x>0].mean() / abs(x[x<0].mean())) if abs(x[x<0].mean()) > 0 else 0)))
+        st.markdown("""
+        ### 🔍 Indikatoren
+        """, unsafe_allow_html=True)
+        rsi_val = data['RSI'].iloc[-1] if 'RSI' in data.columns else None
+        ema_val = data['EMA20'].iloc[-1] if 'EMA20' in data.columns else None
+        macd_val = data['MACD'].iloc[-1] if 'MACD' in data.columns else None
 
-    # RSI-Status
-    rsi = df["RSI"].iloc[-1]
-    rsi_color = "white"
-    if rsi > 70:
-        rsi_color = "red"
-    elif rsi < 30:
-        rsi_color = "green"
+        st.markdown(f"- **RSI**: {color_value(rsi_val, (55, 70), (45, 55))}" if rsi_val else "- RSI: n/a", unsafe_allow_html=True)
+        st.markdown(f"- **EMA20**: {color_value(ema_val, (0, float('inf')), (0, float('inf')))}" if ema_val else "- EMA20: n/a", unsafe_allow_html=True)
+        st.markdown(f"- **MACD**: {color_value(macd_val, (0, float('inf')), (-0.5, 0))}" if macd_val else "- MACD: n/a", unsafe_allow_html=True)
 
-    # EMA-Status
-    ema = df["EMA20"].iloc[-1]
-    close = df["close"].iloc[-1]
-    ema_color = "green" if close > ema else "red"
-
-    # Kerzenchart
-    fig = go.Figure()
-    fig.add_trace(go.Candlestick(
-        x=df.index,
-        open=df["open"],
-        high=df["high"],
-        low=df["low"],
-        close=df["close"],
-        name="Candles"
-    ))
-    fig.update_layout(xaxis_rangeslider_visible=False, height=500)
-    st.plotly_chart(fig, use_container_width=True)
-
-    # Indikatoren anzeigen
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("📈 RSI", f"{rsi:.2f}", delta_color="off")
-        st.markdown(f"<span style='color:{rsi_color}'>Bewertung: {rsi_color.upper()}</span>", unsafe_allow_html=True)
-    with col2:
-        st.metric("📉 EMA20", f"{ema:.2f}", delta=f"{(close - ema):.2f}")
-        st.markdown(f"<span style='color:{ema_color}'>Kurs {'über' if close > ema else 'unter'} EMA</span>", unsafe_allow_html=True)
-
-    st.success("✅ Live-Daten & Kerzenchart geladen.")
+        st.success("✅ Live-Daten und Indikatoren geladen.")
 
 except Exception as e:
-    st.error("❌ Daten konnten nicht geladen werden. Bitte Symbol prüfen.")
-    st.exception(e)
+    st.error(f"Fehler beim Laden oder Berechnen der Daten: {e}")
