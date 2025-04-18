@@ -18,22 +18,20 @@ suchtext = st.text_input("🔍 Suche nach Asset (z.B. TSLA)", "")
 
 asset_liste = [a for a in kategorien[kategorie] if suchtext.upper() in a.upper()]
 asset = st.selectbox("🎯 Asset auswählen", asset_liste)
-
 interval = st.selectbox("⏱️ Zeitintervall", ["1m", "5m", "15m", "1h", "4h", "1d"])
 
-# --- Daten laden ---
 st.markdown(f"### 📍 Gewähltes Asset: `{asset}`")
 
+# --- Daten holen
 data = yf.download(asset, period="1d", interval=interval)
-
 if data is None or data.empty:
     st.error("❌ Keine Daten gefunden – bitte anderes Asset oder Intervall wählen.")
     st.stop()
 
-# Fix: Index zurücksetzen, damit keine Probleme entstehen
 data.reset_index(inplace=True)
+data.columns = [str(col) for col in data.columns]  # 🔧 Spalten glätten
 
-# --- Indikatoren berechnen ---
+# --- Technische Indikatoren
 indikatoren_ok = False
 try:
     data["EMA20"] = ta.ema(data["Close"], length=20)
@@ -42,17 +40,15 @@ try:
     if macd is not None and "MACD_12_26_9" in macd.columns:
         data["MACD"] = macd["MACD_12_26_9"]
         data["Signal"] = macd["MACDs_12_26_9"]
-        indikator_spalten = ["Close", "EMA20", "RSI", "MACD", "Signal"]
-        indikator_spalten = [col for col in indikator_spalten if col in data.columns]
         indikatoren_ok = True
-except:
-    indikatoren_ok = False
+except Exception as e:
+    st.warning(f"⚠️ Indikatoren konnten nicht berechnet werden: {e}")
 
-# --- Datenvorschau
+# --- Vorschau
 st.subheader("📊 Datenvorschau:")
 st.dataframe(data.tail(10))
 
-# --- Charts ---
+# --- Charts
 if "Close" in data.columns and "EMA20" in data.columns:
     st.subheader("📈 Kursverlauf (Close & EMA20)")
     st.line_chart(data[["Close", "EMA20"]].dropna())
