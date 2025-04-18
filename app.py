@@ -1,7 +1,7 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import pandas_ta as ta
+import pandas-ta as ta
 
 st.set_page_config(layout="wide")
 st.title("KI-Trading App – Live Analyse & Prognose")
