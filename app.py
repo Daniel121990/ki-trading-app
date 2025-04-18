@@ -6,66 +6,68 @@ import pandas_ta as ta
 st.set_page_config(layout="wide")
 st.title("📈 KI-Trading App – Live Analyse")
 
-# Kategorien und Assets
-categories = {
-    "Krypto": ["BTC-USD", "ETH-USD", "XRP-USD"],
-    "Aktien": ["AAPL", "TSLA", "NVDA"],
-    "Rohstoffe": ["XAUUSD", "CL=F"]
+# --- Kategorien & Assets ---
+kategorien = {
+    "Krypto": ["BTC-USD", "ETH-USD", "XRP-USD", "BNB-USD"],
+    "Aktien": ["AAPL", "TSLA", "NVDA", "META"],
+    "Rohstoffe": ["XAUUSD", "XAGUSD", "CL=F", "BZ=F"]
 }
 
-# Kategorie auswählen
-category = st.selectbox("Kategorie wählen", list(categories.keys()))
+kategorie = st.selectbox("📂 Kategorie wählen", list(kategorien.keys()))
+suchtext = st.text_input("🔍 Suche nach Asset (z.B. TSLA)", "")
 
-# Suchfeld mit Dropdown
-query = st.text_input("Suche nach Asset (z.B. TSLA)", "")
-filtered_assets = [asset for asset in categories[category] if query.upper() in asset]
-asset = st.selectbox("Asset auswählen", filtered_assets or categories[category])
+asset_liste = [a for a in kategorien[kategorie] if suchtext.upper() in a.upper()]
+asset = st.selectbox("🎯 Asset auswählen", asset_liste)
 
-# Intervallauswahl
-interval = st.selectbox("Zeitintervall", ["1m", "5m", "15m", "1h", "4h", "1d"])
+interval = st.selectbox("⏱️ Zeitintervall", ["1m", "5m", "15m", "1h", "4h", "1d"])
 
-# Daten laden
+# --- Daten laden ---
+st.markdown(f"### 📍 Gewähltes Asset: `{asset}`")
+
+data = yf.download(asset, period="1d", interval=interval)
+if data is None or data.empty:
+    st.error("❌ Keine Daten gefunden – bitte anderes Asset oder Intervall wählen.")
+    st.stop()
+
+st.subheader("📊 Datenvorschau:")
+st.dataframe(data.tail(10))
+
+# --- Technische Indikatoren ---
 try:
-    data = yf.download(asset, period="1d", interval=interval)
-    st.markdown(f"### 📍 Gewähltes Asset: {asset}")
-    st.dataframe(data.tail(5))
-
-    # Indikatoren berechnen
     data["EMA20"] = ta.ema(data["Close"], length=20)
     data["RSI"] = ta.rsi(data["Close"], length=14)
-    macd_df = ta.macd(data["Close"])
-
-    if macd_df is not None and "MACD_12_26_9" in macd_df.columns:
-        data["MACD"] = macd_df["MACD_12_26_9"]
-        data["Signal"] = macd_df["MACDs_12_26_9"]
+    macd = ta.macd(data["Close"])
+    if macd is not None and "MACD_12_26_9" in macd.columns:
+        data["MACD"] = macd["MACD_12_26_9"]
+        data["Signal"] = macd["MACDs_12_26_9"]
+        macd_ok = True
     else:
-        st.warning("⚠️ MACD konnte nicht berechnet werden.")
+        macd_ok = False
+except Exception as e:
+    st.warning("⚠️ Indikatoren konnten nicht berechnet werden.")
+    macd_ok = False
 
-    # Chart anzeigen
-    st.subheader("📊 Kursverlauf (Close & EMA20)")
+# --- Charts ---
+try:
+    st.subheader("📈 Kursverlauf (Close & EMA20)")
     st.line_chart(data[["Close", "EMA20"]].dropna())
+except:
+    st.warning("⚠️ Kursverlauf konnte nicht angezeigt werden.")
 
-    # RSI farblich markieren
-    latest_rsi = data["RSI"].iloc[-1] if "RSI" in data else None
-    rsi_color = "white"
-    if latest_rsi is not None:
-        if latest_rsi < 30:
-            rsi_color = "red"
-        elif latest_rsi > 70:
-            rsi_color = "green"
-    st.markdown(f"<div style='color:{rsi_color}'>RSI: {latest_rsi:.2f}</div>", unsafe_allow_html=True)
+try:
+    st.subheader("📉 RSI")
+    st.line_chart(data[["RSI"]].dropna())
+except:
+    st.warning("⚠️ RSI konnte nicht angezeigt werden.")
 
-    # MACD und Signal
-    if "MACD" in data and "Signal" in data:
+if macd_ok:
+    try:
         st.subheader("📈 MACD & Signal")
         st.line_chart(data[["MACD", "Signal"]].dropna())
+    except:
+        st.warning("⚠️ MACD konnte nicht dargestellt werden.")
+else:
+    st.warning("⚠️ MACD konnte nicht berechnet werden – Spalte fehlt oder Daten unvollständig.")
 
-    # Veränderung in %
-    if len(data) > 1:
-        change_1d = ((data["Close"].iloc[-1] - data["Close"].iloc[0]) / data["Close"].iloc[0]) * 100
-        st.markdown(f"**Veränderung (heute):** {change_1d:.2f}%")
-
-except Exception as e:
-    st.error(f"Fehler beim Laden oder Berechnen der Daten: {e}")
-
-st.info("✅ Grundfunktionen aktiv. KI-Analyse, BUY-/SELL und Candle-Prognose folgen.")
+# --- Abschluss
+st.success("✅ Grundfunktionen aktiv. KI-Analyse, BUY-/SELL und Candle-Prognose folgen.")
