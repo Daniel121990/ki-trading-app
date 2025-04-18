@@ -1,90 +1,92 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
-import pandas_ta as ta
-import requests
+# 📊 KI-Trading App – Live Analyse & Prognose (über Yahoo Finance)
 
-st.set_page_config(page_title="📊 KI-Trading App", layout="wide")
+import streamlit as st
+import yfinance as yf
+import pandas as pd
+import pandas_ta as ta
+import plotly.graph_objects as go
+
+# 🌙 Dunkles Layout
+st.set_page_config(layout="wide", page_title="KI-Trading App")
+st.markdown("""
+    <style>
+        body {background-color: #0e1117; color: white;}
+        .st-bb {background-color: #0e1117;}
+        .st-at {background-color: #0e1117;}
+        .st-emotion-cache-1avcm0n {background-color: #0e1117;}
+    </style>
+""", unsafe_allow_html=True)
 
 st.title("📊 KI-Trading App – Live Analyse & Prognose")
 
-# --- Kategorien und Top-Assets ---
-kategorien = {
-    "Krypto": ["BTCUSDT", "ETHUSDT", "XRPUSDT", "SOLUSDT", "DOGEUSDT", "ADAUSDT", "BNBUSDT", "AVAXUSDT", "DOTUSDT", "TRXUSDT"],
-    "Aktien": ["AAPL", "TSLA", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "JPM", "V", "NFLX"],
-    "Rohstoffe": ["GC=F", "SI=F", "CL=F", "BZ=F", "HG=F", "NG=F", "ZC=F", "ZS=F", "LE=F", "PL=F"]
+# ✅ Kategorien und Top-Auswahl
+categories = {
+    "Krypto": ["BTC-USD", "ETH-USD", "XRP-USD", "SOL-USD", "ADA-USD", "AVAX-USD", "DOGE-USD", "BNB-USD"],
+    "Aktien": [
+        "AAPL", "TSLA", "NVDA", "MSFT", "AMZN", "GOOGL", "META", "BABA", "NFLX", "INTC",
+        "JPM", "V", "UNH", "DIS", "PFE", "KO", "MRK", "XOM", "WMT", "NKE"
+    ],
+    "Rohstoffe": ["GC=F", "SI=F", "CL=F", "NG=F", "HG=F", "ZC=F", "ZS=F", "KC=F", "SB=F", "LE=F"]
 }
 
-# --- Auswahlfelder ---
-kategorie = st.selectbox("🔍 Wähle eine Kategorie", kategorien.keys())
-asset = st.selectbox("📈 Wähle dein Asset", kategorien[kategorie])
-zeitintervall = st.selectbox("⏱ Zeitintervall", ["1m", "5m", "15m", "1h", "4h", "1d"])
+# Dropdowns für Kategorie & Asset & Zeit
+category = st.selectbox("🧭 Wähle eine Kategorie", list(categories.keys()))
+asset_list = categories[category]
+search = st.text_input("🔎 Suche nach Asset (z.B. TSLA, ETH-USD)", "")
 
-st.markdown(f"### 📍 Gewähltes Asset: `{asset}`")
+filtered_assets = [a for a in asset_list if search.upper() in a.upper()] or asset_list
+symbol = st.selectbox("📈 Wähle ein Asset", filtered_assets)
+timeframe = st.selectbox("⏳ Zeitintervall", ["1m", "5m", "15m", "1h", "1d"])
 
-# --- Binance Klines URL für Krypto (keine API-Keys notwendig!) ---
-def get_binance_ohlcv(symbol, interval="1m", limit=200):
-    url = f"https://api1.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
-    response = requests.get(url)
-    response.raise_for_status()
-    data = response.json()
-    df = pd.DataFrame(data, columns=[
-        "timestamp", "open", "high", "low", "close", "volume", "close_time",
-        "quote_asset_volume", "number_of_trades", "taker_buy_base", "taker_buy_quote", "ignore"
-    ])
-    df["time"] = pd.to_datetime(df["timestamp"], unit="ms")
-    df.set_index("time", inplace=True)
-    df = df.astype(float)
-    return df[["open", "high", "low", "close", "volume"]]
+st.markdown(f"### 📍 Gewähltes Asset: `{symbol}`")
 
-# --- Daten laden (nur Krypto via Binance für Livechart) ---
-if kategorie == "Krypto":
-    try:
-        df = get_binance_ohlcv(asset, interval=zeitintervall)
-        st.success("✅ Live-Daten geladen.")
+try:
+    # 📦 Daten abrufen
+    data = yf.download(tickers=symbol, interval=timeframe, period="1d")
+    if data.empty:
+        st.error("❌ Daten konnten nicht geladen werden. Bitte Symbol prüfen.")
+        st.stop()
 
-        # --- Technische Indikatoren (RSI, EMA20, MACD) ---
-        df["EMA20"] = ta.ema(df["close"], length=20)
-        df["RSI"] = ta.rsi(df["close"], length=14)
-        macd = ta.macd(df["close"])
-        if macd is not None and "MACD_12_26_9" in macd.columns:
-            df["MACD"] = macd["MACD_12_26_9"]
-        else:
-            df["MACD"] = np.nan
+    # 📊 Indikatoren berechnen
+    data["EMA20"] = ta.ema(data["Close"], length=20)
+    data["RSI"] = ta.rsi(data["Close"], length=14)
+    macd = ta.macd(data["Close"])
+    if macd is not None and "MACD_12_26_9" in macd.columns:
+        data["MACD"] = macd["MACD_12_26_9"]
+    else:
+        data["MACD"] = None
 
-        # --- Candlestick-Chart ---
-        fig = go.Figure(data=[go.Candlestick(
-            x=df.index,
-            open=df["open"],
-            high=df["high"],
-            low=df["low"],
-            close=df["close"]
-        )])
-        fig.update_layout(title="📊 Kursverlauf (1-Minuten-Kerzen)", xaxis_title="Zeit", yaxis_title="Preis", template="plotly_dark")
-        st.plotly_chart(fig, use_container_width=True)
+    # 📉 Kerzenchart
+    st.subheader("📉 Kursverlauf (1-Minuten-Kerzen)")
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(
+        x=data.index,
+        open=data["Open"],
+        high=data["High"],
+        low=data["Low"],
+        close=data["Close"],
+        name="Kerzen"
+    ))
+    fig.update_layout(xaxis_rangeslider_visible=False, height=400)
+    st.plotly_chart(fig, use_container_width=True)
 
-        # --- Indikatorwerte anzeigen (farbcodiert) ---
-        def farbe(wert, gut, neutral):
-            if wert >= gut:
-                return "🟢"
-            elif wert <= neutral:
-                return "🔴"
-            else:
-                return "⚪"
+    # 🔍 Indikator-Anzeige als Werte
+    st.subheader("🔎 Indikatoren")
+    def get_color(val, low, high):
+        if pd.isna(val): return "white"
+        if val < low: return "red"
+        if val > high: return "green"
+        return "white"
 
-        st.markdown("### 🔍 Indikatoren")
-        col1, col2, col3 = st.columns(3)
+    rsi = round(data["RSI"].iloc[-1], 2)
+    ema = round(data["EMA20"].iloc[-1], 2)
+    macd_val = round(data["MACD"].iloc[-1], 4) if not pd.isna(data["MACD"].iloc[-1]) else "n/a"
 
-        rsi = round(df["RSI"].iloc[-1], 2)
-        ema = round(df["EMA20"].iloc[-1], 2)
-        macd = round(df["MACD"].iloc[-1], 4)
+    st.markdown(f"- **RSI:** <span style='color:{get_color(rsi, 30, 70)}'>{rsi}</span>", unsafe_allow_html=True)
+    st.markdown(f"- **EMA20:** <span style='color:{get_color(ema, 0, float('inf'))}'>{ema}</span>", unsafe_allow_html=True)
+    st.markdown(f"- **MACD:** <span style='color:{get_color(macd_val, 0, float('inf'))}'>{macd_val}</span>", unsafe_allow_html=True)
 
-        col1.markdown(f"**RSI:** {farbe(rsi, 70, 30)} {rsi}")
-        col2.markdown(f"**EMA20:** ⚪ {ema}")
-        col3.markdown(f"**MACD:** ⚪ {macd}")
+    st.success("✅ Live Daten und Indikatoren geladen.")
 
-    except Exception as e:
-        st.error(f"❌ Daten konnten nicht geladen werden. Fehler: {str(e)}")
-else:
-    st.warning("⚠️ Aktuell ist nur die Kategorie 'Krypto' mit Live-Kerzen aktiviert.")
+except Exception as e:
+    st.error(f"❌ Daten konnten nicht geladen werden. Fehler: {e}")
