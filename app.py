@@ -1,104 +1,120 @@
-import streamlit as st
-import requests
-import pandas as pd
-import plotly.graph_objects as go
-import pandas_ta as ta
+# KI-Trading App – Binance Version mit Candlechart & Live-Analyse
 
+import streamlit as st
+import pandas as pd
+from binance.client import Client
+import plotly.graph_objects as go
+
+# App Layout
 st.set_page_config(layout="wide")
 st.title("📊 KI-Trading App – Live Kerzenchart & Analyse")
 
-# Kategorien und Symbole
+# Binance Client (öffentliche Daten)
+client = Client()
+
+# Kategorien und Auswahlfelder
+st.subheader("📁 Kategorienwahl")
 kategorien = {
-    "Krypto": ["BTCUSDT", "XRPUSDT", "ETHUSDT", "BNBUSDT"],
-    "Aktien": ["AAPL", "TSLA", "NVDA", "GOOG"],
-    "Rohstoffe": ["XAUUSD", "OIL", "SILVER"]
+    "Krypto": ["BTCUSDT", "ETHUSDT", "XRPUSDT", "BNBUSDT"],
+    "Aktien": ["AAPL", "TSLA", "NVDA"],  # Dummy
+    "Rohstoffe": ["XAUUSD", "OILUSD"]     # Dummy
 }
 
-kategorie = st.selectbox("📁 Kategorie wählen", list(kategorien.keys()))
-suchsymbol = st.text_input("🔎 Suche nach Asset (z.B. TSLA)", "BTCUSDT")
+kategorie = st.selectbox("Kategorie wählen", list(kategorien.keys()))
 
-# Intervall-Auswahl
-interval = st.selectbox("⏱ Zeitintervall", ["1m", "5m", "15m", "1h", "4h", "1d"])
+suchbegriff = st.text_input("🔍 Suche nach Asset (z.B. TSLA, BTCUSDT)", "")
 
-# Binance Symbol korrigieren
-symbol = suchsymbol.upper().replace("-", "").replace("/", "")
+verfuegbare_assets = kategorien[kategorie]
+if suchbegriff:
+    verfuegbare_assets = [a for a in verfuegbare_assets if suchbegriff.upper() in a]
 
-# Funktion zum Abrufen der Binance-Daten
-def get_binance_data(symbol, interval="1m", limit=100):
-    url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
-    r = requests.get(url)
-    if r.status_code != 200:
+asset = st.selectbox("📈 Asset auswählen", verfuegbare_assets)
+intervall = st.selectbox("🕒 Zeitintervall", ["1m", "5m", "15m", "1h", "4h", "1d"])
+
+st.markdown(f"""
+### 📍 Gewähltes Asset: `{asset}`
+---
+""")
+
+# Daten von Binance holen
+def get_binance_data(symbol, interval, lookback='1 day'):
+    try:
+        klines = client.get_historical_klines(symbol, interval, lookback)
+        if not klines:
+            return None
+        df = pd.DataFrame(klines, columns=[
+            'datetime', 'open', 'high', 'low', 'close', 'volume',
+            'close_time', 'quote_asset_volume', 'number_of_trades',
+            'taker_buy_base_volume', 'taker_buy_quote_volume', 'ignore'
+        ])
+        df['datetime'] = pd.to_datetime(df['datetime'], unit='ms')
+        df.set_index('datetime', inplace=True)
+        df = df[['open', 'high', 'low', 'close', 'volume']].astype(float)
+        return df
+    except Exception as e:
+        st.error(f"❌ Binance-Daten konnten nicht geladen werden: {e}")
         return None
-    data = r.json()
-    df = pd.DataFrame(data, columns=[
-        "timestamp", "open", "high", "low", "close", "volume",
-        "close_time", "quote_asset_volume", "number_of_trades",
-        "taker_buy_base_volume", "taker_buy_quote_volume", "ignore"])
-    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-    df.set_index("timestamp", inplace=True)
-    df = df[["open", "high", "low", "close", "volume"]].astype(float)
-    return df
 
-# Daten abrufen
-data = get_binance_data(symbol, interval)
+# Daten laden und anzeigen
+data = get_binance_data(asset, interval)
 
 if data is None or data.empty:
     st.error("❌ Daten konnten nicht geladen werden. Bitte Symbol prüfen.")
     st.stop()
 
-st.success(f"📍 Daten erfolgreich geladen: {symbol}")
-st.dataframe(data.tail(), use_container_width=True)
+# Indikatoren berechnen (nur als Werte, keine Diagramme)
+def calc_rsi(series, period=14):
+    delta = series.diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    avg_gain = gain.rolling(period).mean()
+    avg_loss = loss.rolling(period).mean()
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
 
-# Berechne RSI und EMA ohne Diagramm
-try:
-    rsi_value = round(ta.rsi(data['close'], length=14).iloc[-1], 2)
-    ema_value = round(ta.ema(data['close'], length=20).iloc[-1], 2)
-except Exception as e:
-    rsi_value, ema_value = None, None
+def calc_ema(series, period=20):
+    return series.ewm(span=period, adjust=False).mean()
 
-# Farbe anhand der Werte
-def farbwert(metric, value):
-    if metric == "rsi":
-        if value is None:
-            return ("Keine Daten", "gray")
-        elif value < 30:
-            return (f"RSI: {value}", "green")
-        elif value > 70:
-            return (f"RSI: {value}", "red")
-        else:
-            return (f"RSI: {value}", "white")
-    elif metric == "ema":
-        if value is None:
-            return ("Keine Daten", "gray")
-        else:
-            return (f"EMA20: {value}", "cyan")
+def macd_calc(series):
+    ema12 = series.ewm(span=12).mean()
+    ema26 = series.ewm(span=26).mean()
+    macd = ema12 - ema26
+    signal = macd.ewm(span=9).mean()
+    return macd, signal
 
-rsi_text, rsi_color = farbwert("rsi", rsi_value)
-ema_text, ema_color = farbwert("ema", ema_value)
+close = data['close']
+data['RSI'] = calc_rsi(close)
+data['EMA20'] = calc_ema(close)
+data['MACD'], data['Signal'] = macd_calc(close)
 
-# Zwei Spalten zur Anzeige
-col1, col2 = st.columns(2)
-col1.markdown(f"<h4 style='color:{rsi_color}'>{rsi_text}</h4>", unsafe_allow_html=True)
-col2.markdown(f"<h4 style='color:{ema_color}'>{ema_text}</h4>", unsafe_allow_html=True)
-
-# Kerzendiagramm zeichnen
-fig = go.Figure()
-fig.add_trace(go.Candlestick(
-    x=data.index,
-    open=data['open'],
-    high=data['high'],
-    low=data['low'],
-    close=data['close'],
-    name="Candlestick"
-))
-fig.update_layout(
-    title=f"📈 Candlestick Chart: {symbol} ({interval})",
-    xaxis_title="Zeit",
-    yaxis_title="Preis",
-    xaxis_rangeslider_visible=False,
-    template="plotly_dark"
-)
-
+# Live Candlechart anzeigen
+st.subheader("📊 Live Kerzenchart")
+fig = go.Figure(data=[
+    go.Candlestick(x=data.index,
+                   open=data['open'],
+                   high=data['high'],
+                   low=data['low'],
+                   close=data['close'])
+])
+fig.update_layout(height=500, margin=dict(l=0, r=0, t=25, b=0))
 st.plotly_chart(fig, use_container_width=True)
 
-st.success("✅ Kerzenchart & Indikatorwerte bereit für KI-Prognose")
+# Indikator Status farblich (kein Diagramm)
+st.subheader("📋 Indikator-Status (nur Werte)")
+
+rsi = round(data['RSI'].dropna().iloc[-1], 2)
+ema = round(data['EMA20'].dropna().iloc[-1], 2)
+macd = round(data['MACD'].dropna().iloc[-1], 4)
+signal = round(data['Signal'].dropna().iloc[-1], 4)
+
+# Bewertung nach Farben
+rsi_color = "green" if rsi < 30 or rsi > 70 else "white"
+macd_color = "green" if macd > signal else ("red" if macd < signal else "white")
+
+st.markdown(f"""
+- **RSI**: <span style='color:{rsi_color};font-weight:bold'>{rsi}</span>  
+- **EMA20**: {ema}  
+- **MACD**: <span style='color:{macd_color};font-weight:bold'>{macd}</span> (Signal: {signal})
+""", unsafe_allow_html=True)
+
+st.success("✅ Alles läuft stabil. Jetzt bereit für KI-Logik, BUY/SELL-Signale & Prognosen.")
