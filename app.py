@@ -1,4 +1,5 @@
-# 📈 KI-Trading App – Live Chart + Indikatoren
+# 📈 KI-Trading App – Live Chart + Indikatoren (verbesserte Kerzenanzeige)
+
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -40,26 +41,19 @@ st.markdown(f"### 📍 Asset: `{symbol}` – Intervall: `{interval}`")
 # 🔄 Daten laden
 @st.cache_data
 def load_data(sym, interv):
-    df = yf.download(sym, interval=interv, period="1d")
-    if df.empty:
-        df = yf.download(sym, interval=interv, period="5d")
-    return df
+    try:
+        df = yf.download(sym, interval=interv, period="1d")
+        if df.empty:
+            df = yf.download(sym, interval=interv, period="5d")
+        return df
+    except:
+        return pd.DataFrame()
 
 try:
     df = load_data(symbol, interval)
-    if df.empty or "Close" not in df.columns:
+    if df.empty or not all(col in df.columns for col in ["Open", "High", "Low", "Close"]):
         st.error("❌ Daten ungültig oder leer. Bitte Symbol & Zeitintervall prüfen.")
         st.stop()
-
-    # 📊 Indikatoren berechnen
-    df["EMA20"] = ta.ema(df["Close"], length=20)
-    df["RSI"] = ta.rsi(df["Close"], length=14)
-
-    macd = ta.macd(df["Close"])
-    if macd is not None and isinstance(macd, pd.DataFrame) and "MACD_12_26_9" in macd.columns:
-        df["MACD"] = macd["MACD_12_26_9"]
-    else:
-        df["MACD"] = pd.Series([None]*len(df))
 
     # 📉 Candlestick-Chart
     st.subheader("🕯️ Kursverlauf – Candlestick")
@@ -74,6 +68,15 @@ try:
     fig.update_layout(xaxis_rangeslider_visible=False, height=400)
     st.plotly_chart(fig, use_container_width=True)
 
+    # 📊 Indikatoren berechnen
+    df["EMA20"] = ta.ema(df["Close"], length=20)
+    df["RSI"] = ta.rsi(df["Close"], length=14)
+    macd = ta.macd(df["Close"])
+    if macd is not None and isinstance(macd, pd.DataFrame) and "MACD_12_26_9" in macd.columns:
+        df["MACD"] = macd["MACD_12_26_9"]
+    else:
+        df["MACD"] = pd.Series([None]*len(df))
+
     # 🔍 Indikatoren farblich
     st.subheader("🔎 Indikatoren (aktuellste Werte)")
 
@@ -83,9 +86,9 @@ try:
         if val > high: return "green"
         return "white"
 
-    rsi = round(df["RSI"].iloc[-1], 2)
-    ema = round(df["EMA20"].iloc[-1], 2)
-    macd_val = round(df["MACD"].iloc[-1], 4) if not pd.isna(df["MACD"].iloc[-1]) else "n/a"
+    rsi = round(df["RSI"].dropna().iloc[-1], 2) if not df["RSI"].dropna().empty else "n/a"
+    ema = round(df["EMA20"].dropna().iloc[-1], 2) if not df["EMA20"].dropna().empty else "n/a"
+    macd_val = round(df["MACD"].dropna().iloc[-1], 4) if not df["MACD"].dropna().empty else "n/a"
 
     st.markdown(f"- **RSI:** <span style='color:{color(rsi, 30, 70)}'>{rsi}</span>", unsafe_allow_html=True)
     st.markdown(f"- **EMA20:** <span style='color:{color(ema, 0, float('inf'))}'>{ema}</span>", unsafe_allow_html=True)
