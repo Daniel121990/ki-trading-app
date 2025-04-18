@@ -6,11 +6,18 @@ import pandas_ta as ta
 st.set_page_config(layout="wide")
 st.title("📈 KI-Trading App – Live Analyse & Prognose")
 
+# Asset-Auswahl
 asset = st.selectbox("Wähle ein Asset", ["XAUUSD", "TSLA", "NVDA", "XRP-USD"])
-data = yf.download(asset, period="1d", interval="1m")
 
-# Berechne technische Indikatoren
+# Daten laden
 try:
+    data = yf.download(asset, period="1d", interval="1m")
+    
+    # MultiIndex prüfen und bereinigen
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = data.columns.get_level_values(0)
+
+    # Indikatoren berechnen
     data["EMA20"] = ta.ema(data["Close"], length=20)
     data["RSI"] = ta.rsi(data["Close"], length=14)
     macd = ta.macd(data["Close"])
@@ -20,8 +27,9 @@ try:
         data["MACDs"] = macd["MACDs_12_26_9"]
     else:
         st.warning("⚠️ MACD konnte nicht berechnet werden – Spalte fehlt oder Daten unvollständig.")
+        st.stop()
 
-    # Chartanzeige
+    # Charts anzeigen
     st.subheader(f"📊 Chart für: {asset}")
     st.line_chart(data[["Close", "EMA20"]].dropna())
 
@@ -31,8 +39,7 @@ try:
     st.subheader("📈 MACD & Signal")
     st.line_chart(data[["MACD", "MACDs"]].dropna())
 
-    # Prognose-Hinweis (funktionell später einbauen)
-    st.info("✅ Grundfunktionen aktiv. BUY-/SELL & Candle-Prognose folgt.")
+    st.info("✅ Grundfunktionen aktiv. BUY-/SELL & KI folgt!")
 
 except Exception as e:
     st.error(f"Fehler beim Laden oder Berechnen der Daten: {e}")
