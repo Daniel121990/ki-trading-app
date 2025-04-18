@@ -14,12 +14,22 @@ if data is None or data.empty:
     st.error("❌ Keine Daten verfügbar.")
     st.stop()
 
-# RSI mit Pandas-Berechnung (ohne pandas_ta)
+# RSI
 delta = data["Close"].diff()
 gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
 loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
 rs = gain / loss
 data["RSI"] = 100 - (100 / (1 + rs))
+
+# MACD
+ema12 = data["Close"].ewm(span=12, adjust=False).mean()
+ema26 = data["Close"].ewm(span=26, adjust=False).mean()
+data["MACD"] = ema12 - ema26
+data["Signal"] = data["MACD"].ewm(span=9, adjust=False).mean()
+
+# BUY-/SELL-Signale
+data["BUY"] = (data["MACD"] > data["Signal"]) & (data["MACD"].shift(1) <= data["Signal"].shift(1))
+data["SELL"] = (data["MACD"] < data["Signal"]) & (data["MACD"].shift(1) >= data["Signal"].shift(1))
 
 col1, col2 = st.columns([2, 1])
 
@@ -31,4 +41,13 @@ with col2:
     st.subheader("📉 RSI")
     st.line_chart(data["RSI"])
 
-st.success("✅ Layout + RSI funktionieren. Jetzt bereit für MACD, BUY/SELL, KI-Prognose.")
+st.subheader("📈 MACD & Signal")
+st.line_chart(data[["MACD", "Signal"]].dropna())
+
+st.subheader("🟢 BUY / 🔴 SELL Punkte")
+buy_signals = data[data["BUY"]]
+sell_signals = data[data["SELL"]]
+st.dataframe(pd.concat([buy_signals[["Close"]].rename(columns={"Close": "BUY-Signal"}),
+                        sell_signals[["Close"]].rename(columns={"Close": "SELL-Signal"})], axis=1))
+
+st.success("✅ MACD & BUY-/SELL-Signale aktiviert. Bereit für KI-Prognose.")
