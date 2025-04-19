@@ -1,58 +1,27 @@
 import streamlit as st
+import yfinance as yf
 import pandas as pd
-import requests
-import time
-from datetime import datetime
-import plotly.express as px
+import pandas_ta as ta
 
-# Layout definieren
 st.set_page_config(layout="wide")
-st.title("📈 Live Bitcoin Kurs (BTCUSDT) – 1-Minuten-Aktualisierung")
+st.title("📈 KI-Trading App – Live Analyse & Prognose")
 
-# Session-Daten initialisieren
-if "data" not in st.session_state:
-    st.session_state.data = []
+asset = st.selectbox("Wähle ein Asset", ["XAUUSD", "TSLA", "NVDA", "XRP-USD"])
+data = yf.download(asset, period="1d", interval="1m")
 
-# Funktion: Aktuellen BTC-Preis von Binance holen
-def get_btc_price():
-    url = "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"
-    response = requests.get(url)
+data["EMA20"] = ta.ema(data["Close"], length=20)
+data["RSI"] = ta.rsi(data["Close"], length=14)
+macd = ta.macd(data["Close"])
+data["MACD"] = macd["MACD_12_26_9"]
+data["MACDs"] = macd["MACDs_12_26_9"]
 
-    try:
-        data = response.json()
+st.subheader(f"📊 Chart für: {asset}")
+st.line_chart(data[["Close", "EMA20"]].dropna())
 
-        # Fehlerbehandlung: Wenn 'price' nicht vorhanden ist
-        if "price" not in data:
-            st.error(f"❌ Binance-Antwort enthält keinen Preis: {data}")
-            return None
+st.subheader("📉 RSI – Relative Strength Index")
+st.line_chart(data[["RSI"]].dropna())
 
-        price = float(data["price"])
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        return {"Zeit": timestamp, "Preis (USDT)": price}
+st.subheader("📈 MACD & Signal")
+st.line_chart(data[["MACD", "MACDs"]].dropna())
 
-    except Exception as e:
-        st.error(f"⚠️ Fehler beim Verarbeiten der Binance-Antwort: {e}")
-        return None
-
-# Kursdaten abrufen und speichern
-new_data = get_btc_price()
-if new_data:
-    st.session_state.data.append(new_data)
-
-# Daten in DataFrame umwandeln
-df = pd.DataFrame(st.session_state.data)
-
-# Tabelle anzeigen
-st.subheader("📋 Aktuelle Preistabelle")
-st.dataframe(df.tail(20), use_container_width=True)
-
-# Liniendiagramm anzeigen
-st.subheader("📊 Preisentwicklung")
-fig = px.line(df, x="Zeit", y="Preis (USDT)", markers=True)
-fig.update_layout(height=500)
-st.plotly_chart(fig, use_container_width=True)
-
-# Automatische Aktualisierung alle 60 Sekunden
-st.info("🔁 Die Seite lädt automatisch alle 60 Sekunden neu...")
-time.sleep(60)
-st.experimental_rerun()
+st.info("✅ Grundfunktionen aktiv. BUY-/SELL & Candle-Prognose folgt.")
