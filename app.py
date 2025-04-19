@@ -1,92 +1,87 @@
-# 📊 KI-Trading App – Live Analyse & Prognose (über Yahoo Finance)
-
 import streamlit as st
 import yfinance as yf
 import pandas as pd
 import pandas_ta as ta
-import plotly.graph_objects as go
 
-# 🌙 Dunkles Layout
-st.set_page_config(layout="wide", page_title="KI-Trading App")
-st.markdown("""
-    <style>
-        body {background-color: #0e1117; color: white;}
-        .st-bb {background-color: #0e1117;}
-        .st-at {background-color: #0e1117;}
-        .st-emotion-cache-1avcm0n {background-color: #0e1117;}
-    </style>
-""", unsafe_allow_html=True)
+st.set_page_config(layout="wide")
+st.title("📈 KI-Trading App – Live Analyse")
 
-st.title("📊 KI-Trading App – Live Analyse & Prognose")
-
-# ✅ Kategorien und Top-Auswahl
-categories = {
-    "Krypto": ["BTC-USD", "ETH-USD", "XRP-USD", "SOL-USD", "ADA-USD", "AVAX-USD", "DOGE-USD", "BNB-USD"],
-    "Aktien": [
-        "AAPL", "TSLA", "NVDA", "MSFT", "AMZN", "GOOGL", "META", "BABA", "NFLX", "INTC",
-        "JPM", "V", "UNH", "DIS", "PFE", "KO", "MRK", "XOM", "WMT", "NKE"
-    ],
-    "Rohstoffe": ["GC=F", "SI=F", "CL=F", "NG=F", "HG=F", "ZC=F", "ZS=F", "KC=F", "SB=F", "LE=F"]
+# --- Kategorien & Assets
+st.subheader("📂 Kategorie wählen")
+kategorien = {
+    "Krypto": ["BTC-USD", "ETH-USD", "XRP-USD"],
+    "Aktien": ["AAPL", "TSLA", "NVDA"],
+    "Rohstoffe": ["GC=F", "SI=F", "CL=F"]
 }
 
-# Dropdowns für Kategorie & Asset & Zeit
-category = st.selectbox("🧭 Wähle eine Kategorie", list(categories.keys()))
-asset_list = categories[category]
-search = st.text_input("🔎 Suche nach Asset (z.B. TSLA, ETH-USD)", "")
+kategorie = st.selectbox("Kategorie", list(kategorien.keys()))
 
-filtered_assets = [a for a in asset_list if search.upper() in a.upper()] or asset_list
-symbol = st.selectbox("📈 Wähle ein Asset", filtered_assets)
-timeframe = st.selectbox("⏳ Zeitintervall", ["1m", "5m", "15m", "1h", "1d"])
+suchbegriff = st.text_input("🔍 Suche nach Asset (z.B. TSLA)", "")
 
-st.markdown(f"### 📍 Gewähltes Asset: `{symbol}`")
+verfuegbare_assets = kategorien[kategorie]
+if suchbegriff:
+    verfuegbare_assets = [a for a in verfuegbare_assets if suchbegriff.upper() in a.upper()]
 
+asset = st.selectbox("Asset auswählen", verfuegbare_assets)
+interval = st.selectbox("Zeitintervall", ["1m", "5m", "15m", "1h", "4h", "1d"], index=0)
+
+st.markdown(f"### 📍 Gewähltes Asset: <span style='color:lightgreen'>{asset}</span>", unsafe_allow_html=True)
+
+# --- Daten holen + absichern
 try:
-    # 📦 Daten abrufen
-    data = yf.download(tickers=symbol, interval=timeframe, period="1d")
-    if data.empty:
-        st.error("❌ Daten konnten nicht geladen werden. Bitte Symbol prüfen.")
+    data = yf.download(asset, period="1d", interval=interval)
+    if data is None or data.empty:
+        st.error("❌ Keine Daten gefunden – bitte anderes Asset oder Intervall wählen.")
         st.stop()
 
-    # 📊 Indikatoren berechnen
-    data["EMA20"] = ta.ema(data["Close"], length=20)
-    data["RSI"] = ta.rsi(data["Close"], length=14)
-    macd = ta.macd(data["Close"])
+    data.reset_index(inplace=True)
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = ['_'.join(col).strip() for col in data.columns.values]
+    else:
+        data.columns = [str(col) for col in data.columns]
+
+    close_col = next((col for col in data.columns if "Close" in col), None)
+    if close_col is None:
+        st.warning("⚠️ Indikatoren konnten nicht berechnet werden: 'Close'")
+        st.stop()
+
+    data["EMA20"] = ta.ema(data[close_col], length=20)
+    data["RSI"] = ta.rsi(data[close_col], length=14)
+    macd = ta.macd(data[close_col])
+
     if macd is not None and "MACD_12_26_9" in macd.columns:
         data["MACD"] = macd["MACD_12_26_9"]
+        data["Signal"] = macd["MACDs_12_26_9"]
     else:
-        data["MACD"] = None
-
-    # 📉 Kerzenchart
-    st.subheader("📉 Kursverlauf (1-Minuten-Kerzen)")
-    fig = go.Figure()
-    fig.add_trace(go.Candlestick(
-        x=data.index,
-        open=data["Open"],
-        high=data["High"],
-        low=data["Low"],
-        close=data["Close"],
-        name="Kerzen"
-    ))
-    fig.update_layout(xaxis_rangeslider_visible=False, height=400)
-    st.plotly_chart(fig, use_container_width=True)
-
-    # 🔍 Indikator-Anzeige als Werte
-    st.subheader("🔎 Indikatoren")
-    def get_color(val, low, high):
-        if pd.isna(val): return "white"
-        if val < low: return "red"
-        if val > high: return "green"
-        return "white"
-
-    rsi = round(data["RSI"].iloc[-1], 2)
-    ema = round(data["EMA20"].iloc[-1], 2)
-    macd_val = round(data["MACD"].iloc[-1], 4) if not pd.isna(data["MACD"].iloc[-1]) else "n/a"
-
-    st.markdown(f"- **RSI:** <span style='color:{get_color(rsi, 30, 70)}'>{rsi}</span>", unsafe_allow_html=True)
-    st.markdown(f"- **EMA20:** <span style='color:{get_color(ema, 0, float('inf'))}'>{ema}</span>", unsafe_allow_html=True)
-    st.markdown(f"- **MACD:** <span style='color:{get_color(macd_val, 0, float('inf'))}'>{macd_val}</span>", unsafe_allow_html=True)
-
-    st.success("✅ Live Daten und Indikatoren geladen.")
+        st.warning("⚠️ MACD konnte nicht berechnet werden – Spalte fehlt oder Daten unvollständig.")
 
 except Exception as e:
-    st.error(f"❌ Daten konnten nicht geladen werden. Fehler: {e}")
+    st.error(f"❌ Fehler beim Datenabruf oder Berechnung: {e}")
+    st.stop()
+
+# --- Datenvorschau
+st.subheader("📊 Datenvorschau:")
+st.dataframe(data.tail(10))
+
+# --- Chart Close + EMA
+st.subheader("📈 Kursverlauf (Close & EMA20)")
+if close_col in data.columns and "EMA20" in data.columns:
+    st.line_chart(data[[close_col, "EMA20"]].dropna())
+else:
+    st.warning("⚠️ Kursverlauf konnte nicht angezeigt werden.")
+
+# --- RSI
+st.subheader("📉 RSI")
+if "RSI" in data.columns:
+    st.line_chart(data[["RSI"]].dropna())
+else:
+    st.warning("⚠️ RSI konnte nicht angezeigt werden.")
+
+# --- MACD & Signal
+st.subheader("📈 MACD & Signal")
+if "MACD" in data.columns and "Signal" in data.columns:
+    st.line_chart(data[["MACD", "Signal"]].dropna())
+else:
+    st.warning("⚠️ MACD konnte nicht dargestellt werden.")
+
+st.success("✅ Grundfunktionen aktiv. KI-Analyse, BUY-/SELL und Candle-Prognose folgen.")
