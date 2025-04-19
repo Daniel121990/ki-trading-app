@@ -1,86 +1,40 @@
-from binance import Client, ThreadedWebsocketManager, ThreadedDepthCacheManager
-client = Client(api_key, api_secret)
+import streamlit as st
+import yfinance as yf
+import pandas as pd
+import pandas_ta as ta
 
-# get market depth
-depth = client.get_order_book(symbol='BNBBTC')
+st.set_page_config(layout="wide")
+st.title("📈 KI-Trading App – Live Analyse & Prognose")
 
-# place a test market buy order, to place an actual order use the create_order function
-order = client.create_test_order(
-    symbol='BNBBTC',
-    side=Client.SIDE_BUY,
-    type=Client.ORDER_TYPE_MARKET,
-    quantity=100)
+asset = st.selectbox("Wähle ein Asset", ["XAUUSD", "TSLA", "NVDA", "XRP-USD"])
+data = yf.download(asset, period="1d", interval="1m")
 
-# get all symbol prices
-prices = client.get_all_tickers()
+# Technische Indikatoren
+data["EMA20"] = ta.ema(data["Close"], length=20)
+data["RSI"] = ta.rsi(data["Close"], length=14)
 
-# withdraw 100 ETH
-# check docs for assumptions around withdrawals
-from binance.exceptions import BinanceAPIException
-try:
-    result = client.withdraw(
-        asset='ETH',
-        address='<eth_address>',
-        amount=100)
-except BinanceAPIException as e:
-    print(e)
+macd = ta.macd(data["Close"])
+
+# Sicher prüfen, ob MACD vollständig berechnet wurde
+if macd is not None and "MACD_12_26_9" in macd.columns and "MACDs_12_26_9" in macd.columns:
+    data["MACD"] = macd["MACD_12_26_9"]
+    data["MACDs"] = macd["MACDs_12_26_9"]
 else:
-    print("Success")
+    st.warning("⚠️ MACD konnte nicht berechnet werden – Spalte fehlt oder Daten unvollständig.")
+    data["MACD"] = None
+    data["MACDs"] = None
 
-# fetch list of withdrawals
-withdraws = client.get_withdraw_history()
+# Visualisierungen
+st.subheader(f"📊 Chart für: {asset}")
+st.line_chart(data[["Close", "EMA20"]].dropna())
 
-# fetch list of ETH withdrawals
-eth_withdraws = client.get_withdraw_history(coin='ETH')
+st.subheader("📉 RSI – Relative Strength Index")
+st.line_chart(data[["RSI"]].dropna())
 
-# get a deposit address for BTC
-address = client.get_deposit_address(coin='BTC')
+st.subheader("📈 MACD & Signal")
+if data["MACD"].isnull().all():
+    st.info("Keine MACD-Werte verfügbar.")
+else:
+    st.line_chart(data[["MACD", "MACDs"]].dropna())
 
-# get historical kline data from any date range
-
-# fetch 1 minute klines for the last day up until now
-klines = client.get_historical_klines("BNBBTC", Client.KLINE_INTERVAL_1MINUTE, "1 day ago UTC")
-
-# fetch 30 minute klines for the last month of 2017
-klines = client.get_historical_klines("ETHBTC", Client.KLINE_INTERVAL_30MINUTE, "1 Dec, 2017", "1 Jan, 2018")
-
-# fetch weekly klines since it listed
-klines = client.get_historical_klines("NEOBTC", Client.KLINE_INTERVAL_1WEEK, "1 Jan, 2017")
-
-# create order through websockets
-order_ws = client.ws_create_order( symbol="LTCUSDT", side="BUY", type="MARKET", quantity=0.1)
-
-# get account using custom headers
-account = client.get_account(headers={'MyCustomKey': 'MyCustomValue'})
-
-# socket manager using threads
-twm = ThreadedWebsocketManager()
-twm.start()
-
-# depth cache manager using threads
-dcm = ThreadedDepthCacheManager()
-dcm.start()
-
-def handle_socket_message(msg):
-    print(f"message type: {msg['e']}")
-    print(msg)
-
-def handle_dcm_message(depth_cache):
-    print(f"symbol {depth_cache.symbol}")
-    print("top 5 bids")
-    print(depth_cache.get_bids()[:5])
-    print("top 5 asks")
-    print(depth_cache.get_asks()[:5])
-    print("last update time {}".format(depth_cache.update_time))
-
-twm.start_kline_socket(callback=handle_socket_message, symbol='BNBBTC')
-
-dcm.start_depth_cache(callback=handle_dcm_message, symbol='ETHBTC')
-
-# replace with a current options symbol
-options_symbol = 'BTC-241227-41000-C'
-dcm.start_options_depth_cache(callback=handle_dcm_message, symbol=options_symbol)
-
-# join the threaded managers to the main thread
-twm.join()
-dcm.join()
+st.success("✅ Grundfunktionen aktiv. BUY-/SELL & Candle-Prognose folgen.")
