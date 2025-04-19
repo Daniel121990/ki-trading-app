@@ -57,25 +57,38 @@ df["Signal"] = 0
 df.loc[(df["MACD"] > df["MACDs"]) & (df["RSI"] < 70), "Signal"] = 1  # BUY
 df.loc[(df["MACD"] < df["MACDs"]) & (df["RSI"] > 30), "Signal"] = -1  # SELL
 
+# --- Daten-Vorschau
+st.subheader("🧾 Datenvorschau")
+st.write(df.tail())
+
 # --- Chart
 st.subheader("📈 Kurs + EMA + BUY-/SELL")
-fig = go.Figure()
-fig.add_trace(go.Scatter(x=df.index, y=df["Close"], mode='lines', name='Close'))
-fig.add_trace(go.Scatter(x=df.index, y=df["EMA20"], mode='lines', name='EMA20'))
-fig.add_trace(go.Scatter(x=df[df["Signal"] == 1].index, y=df[df["Signal"] == 1]["Close"],
-                         mode='markers', name='BUY', marker=dict(color='green', size=8)))
-fig.add_trace(go.Scatter(x=df[df["Signal"] == -1].index, y=df[df["Signal"] == -1]["Close"],
-                         mode='markers', name='SELL', marker=dict(color='red', size=8)))
-fig.update_layout(height=600)
-st.plotly_chart(fig, use_container_width=True)
+if not df.empty:
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df.index, y=df["Close"], mode='lines', name='Close'))
+    fig.add_trace(go.Scatter(x=df.index, y=df["EMA20"], mode='lines', name='EMA20'))
+    fig.add_trace(go.Scatter(x=df[df["Signal"] == 1].index, y=df[df["Signal"] == 1]["Close"],
+                             mode='markers', name='BUY', marker=dict(color='green', size=8)))
+    fig.add_trace(go.Scatter(x=df[df["Signal"] == -1].index, y=df[df["Signal"] == -1]["Close"],
+                             mode='markers', name='SELL', marker=dict(color='red', size=8)))
+    fig.update_layout(height=600)
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.warning("⚠️ Kein Chart verfügbar – Daten leer.")
 
 # --- RSI
 st.subheader("📉 RSI")
-st.line_chart(df[["RSI"]].dropna())
+if "RSI" in df.columns and df["RSI"].notna().sum() > 0:
+    st.line_chart(df[["RSI"]])
+else:
+    st.warning("⚠️ RSI-Werte nicht verfügbar.")
 
 # --- MACD
 st.subheader("📈 MACD & Signal")
-st.line_chart(df[["MACD", "MACDs"]].dropna())
+if "MACD" in df.columns and "MACDs" in df.columns and df[["MACD", "MACDs"]].dropna().shape[0] > 0:
+    st.line_chart(df[["MACD", "MACDs"]])
+else:
+    st.warning("⚠️ MACD-Werte nicht verfügbar.")
 
 # --- Live-Werte (mit Fehlerabfang)
 st.subheader("🧭 Letzte Werte")
