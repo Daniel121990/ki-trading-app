@@ -77,11 +77,14 @@ st.line_chart(df[["RSI"]].dropna())
 st.subheader("📈 MACD & Signal")
 st.line_chart(df[["MACD", "MACDs"]].dropna())
 
-# --- Live-Werte
+# --- Live-Werte (mit Fehlerabfang)
 st.subheader("🧭 Letzte Werte")
-st.metric("Close", f"{df['Close'].iloc[-1]:.2f}")
-st.metric("RSI", f"{df['RSI'].iloc[-1]:.2f}")
-st.metric("MACD", f"{df['MACD'].iloc[-1]:.4f}")
-st.metric("EMA20", f"{df['EMA20'].iloc[-1]:.2f}")
+if not df.empty and len(df) > 1:
+    st.metric("Close", f"{df['Close'].iloc[-1]:.2f}")
+    st.metric("RSI", f"{df['RSI'].iloc[-1]:.2f}")
+    st.metric("MACD", f"{df['MACD'].iloc[-1]:.4f}")
+    st.metric("EMA20", f"{df['EMA20'].iloc[-1]:.2f}")
+else:
+    st.warning("⚠️ Keine Werte zum Anzeigen verfügbar. Eventuell liefert Binance gerade keine Daten.")
 
 st.success("✅ Binance-Version stabil. Vollständig ohne yfinance & pandas_ta.")
