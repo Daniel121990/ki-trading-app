@@ -8,7 +8,7 @@ st.title("📊 BTCUSDT Demo – Historische 5-Minuten-Daten aus CSV")
 
 # CSV laden
 try:
-    df = pd.read_csv("/mnt/data/historisch_btc_5min.csv")
+    df = pd.read_csv("historisch_btc_5min.csv")
     df["Zeit"] = pd.to_datetime(df["Zeit"])
     df.set_index("Zeit", inplace=True)
 except Exception as e:
