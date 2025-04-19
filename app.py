@@ -21,7 +21,7 @@ macd = ta.macd(data["Close"])
 data["MACD"] = macd["MACD_12_26_9"]
 data["MACDs"] = macd["MACDs_12_26_9"]
 
-# BUY-/SELL-Signale setzen (einfaches Beispiel)
+# BUY-/SELL-Signale setzen
 data["Signal"] = 0
 data.loc[(data["MACD"] > data["MACDs"]) & (data["RSI"] < 70), "Signal"] = 1  # BUY
 data.loc[(data["MACD"] < data["MACDs"]) & (data["RSI"] > 30), "Signal"] = -1  # SELL
@@ -31,10 +31,12 @@ fig = go.Figure()
 fig.add_trace(go.Scatter(x=data.index, y=data["Close"], mode='lines', name='Close'))
 fig.add_trace(go.Scatter(x=data.index, y=data["EMA20"], mode='lines', name='EMA20'))
 
-# BUY-/SELL-Signale als Punkte einzeichnen
-fig.add_trace(go.Scatter(x=data[data["Signal"] == 1].index, y=data[data["Signal"] == 1]["Close"],
+# BUY-/SELL-Punkte einzeichnen
+fig.add_trace(go.Scatter(x=data[data["Signal"] == 1].index,
+                         y=data[data["Signal"] == 1]["Close"],
                          mode='markers', name='BUY', marker=dict(color='green', size=8)))
-fig.add_trace(go.Scatter(x=data[data["Signal"] == -1].index, y=data[data["Signal"] == -1]["Close"],
+fig.add_trace(go.Scatter(x=data[data["Signal"] == -1].index,
+                         y=data[data["Signal"] == -1]["Close"],
                          mode='markers', name='SELL', marker=dict(color='red', size=8)))
 
 fig.update_layout(title=f"Live Chart für {asset}", height=600)
@@ -48,11 +50,11 @@ st.line_chart(data[["RSI"]].dropna())
 st.subheader("📈 MACD & Signal")
 st.line_chart(data[["MACD", "MACDs"]].dropna())
 
-# Legende der aktuellen Werte
+# Legende aktueller Werte
 st.subheader("🧭 Indikatorwerte")
 st.metric("Letzter Schlusskurs", f"{data['Close'].iloc[-1]:.2f}")
 st.metric("RSI", f"{data['RSI'].iloc[-1]:.2f}")
 st.metric("MACD", f"{data['MACD'].iloc[-1]:.4f}")
 st.metric("EMA20", f"{data['EMA20'].iloc[-1]:.2f}")
 
-st.info("✅ KI-Logik aktiv. Prognosemodul in Entwicklung. Weitere Indikatoren folgen bei Bedarf.")
+st.info("✅ KI-Logik aktiv. Prognosemodul folgt.")
