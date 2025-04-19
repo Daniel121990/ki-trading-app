@@ -9,9 +9,13 @@ st.title("📈 KI-Trading App – Live Analyse & Prognose")
 asset = st.selectbox("Wähle ein Asset", ["XAUUSD", "TSLA", "NVDA", "XRP-USD"])
 data = yf.download(asset, period="1d", interval="1m")
 
+# MultiIndex-Spalten bereinigen, falls vorhanden
+if isinstance(data.columns, pd.MultiIndex):
+    data.columns = data.columns.get_level_values(1)
+
 # Sicherheitsprüfung
 if data.empty or "Close" not in data.columns:
-    st.error("❌ Keine Daten geladen. Bitte versuche ein anderes Asset.")
+    st.error("❌ Daten konnten nicht geladen werden. Bitte versuche ein anderes Asset.")
     st.stop()
 
 # Indikatoren berechnen
@@ -30,21 +34,21 @@ else:
 
 # Charts anzeigen
 st.subheader(f"📊 Chart für: {asset}")
-if "EMA20" in data.columns and data["EMA20"].isnull().all() == False:
+if "EMA20" in data.columns and not data["EMA20"].isnull().all():
     st.line_chart(data[["Close", "EMA20"]].dropna())
 else:
     st.line_chart(data[["Close"]].dropna())
 
 st.subheader("📉 RSI – Relative Strength Index")
-if "RSI" in data.columns and data["RSI"].isnull().all() == False:
+if "RSI" in data.columns and not data["RSI"].isnull().all():
     st.line_chart(data[["RSI"]].dropna())
 else:
     st.info("RSI konnte nicht berechnet werden.")
 
 st.subheader("📈 MACD & Signal")
-if "MACD" in data.columns and data["MACD"].isnull().all() == False:
+if "MACD" in data.columns and not data["MACD"].isnull().all():
     st.line_chart(data[["MACD", "MACDs"]].dropna())
 else:
     st.info("MACD nicht verfügbar.")
 
-st.success("✅ Grundfunktionen stabil. Prognose folgt.")
+st.success("✅ Grundfunktionen stabil. Prognose & Buy/Sell folgen.")
