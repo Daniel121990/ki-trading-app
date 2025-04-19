@@ -1,6 +1,5 @@
 streamlit
-pandas==1.5.3
-pandas-ta==0.3.14b0
-numpy==1.26.4
+pandas
 plotly
-requests
+python-binance
+python-dotenv
