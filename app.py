@@ -6,36 +6,37 @@ from datetime import datetime
 import plotly.express as px
 
 st.set_page_config(layout="wide")
-st.title("Live Bitcoin Preis (BTC/USDT) – 1-Minuten-Intervalle")
+st.title("📈 Live Bitcoin Kurs (BTCUSDT) – 1-Minuten-Aktualisierung")
 
-# Leere Liste zur Speicherung der Daten
-if "price_data" not in st.session_state:
-    st.session_state.price_data = []
+# Daten speichern in der Session
+if "data" not in st.session_state:
+    st.session_state.data = []
 
-def get_live_price():
+def get_btc_price():
     url = "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"
     response = requests.get(url)
     price = float(response.json()["price"])
     timestamp = datetime.now().strftime("%H:%M:%S")
-    return timestamp, price
+    return {"Zeit": timestamp, "Preis (USDT)": price}
 
-# Hole neuen Preis + speichere ihn
-timestamp, price = get_live_price()
-st.session_state.price_data.append({"Zeit": timestamp, "Preis (USDT)": price})
+# Neuen Kurs holen und speichern
+new_data = get_btc_price()
+st.session_state.data.append(new_data)
 
-# In DataFrame umwandeln
-df = pd.DataFrame(st.session_state.price_data)
+# DataFrame erzeugen
+df = pd.DataFrame(st.session_state.data)
 
-# Tabelle anzeigen
-st.subheader("Preisentwicklung (Live-Tabelle)")
+# Zeige Tabelle
+st.subheader("📋 Aktuelle Preistabelle")
 st.dataframe(df.tail(20), use_container_width=True)
 
-# Chart anzeigen
-st.subheader("Live-Preisverlauf")
+# Zeige Liniendiagramm
+st.subheader("📊 Live-Preisverlauf")
 fig = px.line(df, x="Zeit", y="Preis (USDT)", markers=True)
+fig.update_layout(height=500)
 st.plotly_chart(fig, use_container_width=True)
 
-# Auto-Reload alle 60 Sekunden
-st.info("Aktualisiere alle 60 Sekunden...")
+# Hinweis + Auto-Refresh
+st.info("🔁 Seite lädt alle 60 Sekunden neu für aktuellen Kurs...")
 time.sleep(60)
 st.experimental_rerun()
