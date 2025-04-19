@@ -43,7 +43,6 @@ def render_chart(df, symbol):
         low=df["low"],
         close=df["close"]
     )])
-
     fig.update_layout(
         title=f"Live Chart – {symbol}",
         xaxis_title="Zeit",
@@ -69,7 +68,6 @@ while True:
         render_chart(df, symbol)
     except Exception as e:
         st.error(f"Fehler beim Laden: {e}")
-
     for i in range(30, 0, -1):
         countdown.markdown(f"🔄 Aktualisierung in **{i}** Sekunden…")
         time.sleep(1)
