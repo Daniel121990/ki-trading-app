@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 import time
 
 st.set_page_config(layout="wide")
-st.title("📈 Live Binance Chart – 1-Minuten-Kerzen")
+st.title("✅ Live Binance Chart – 1-Minuten-Kerzen")
 
 # Auswahlfeld für Symbol
 symbols = ["XRPUSDT", "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"]
@@ -48,7 +48,12 @@ def render_chart():
         yaxis_title="Preis (USDT)",
         xaxis_rangeslider_visible=False,
         template="plotly_dark",
-        height=600
+        height=600,
+        yaxis=dict(
+            autorange=True,
+            fixedrange=False,
+            tickformat=".5f"
+        )
     )
     
     st.plotly_chart(fig, use_container_width=True)
@@ -58,5 +63,5 @@ countdown = st.empty()
 while True:
     render_chart()
     for i in range(30, 0, -1):
-        countdown.markdown(f"Aktualisierung in **{i}** Sekunden...")
+        countdown.markdown(f"Aktualisierung in **{i}** Sekunden…")
         time.sleep(1)
