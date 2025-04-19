@@ -26,10 +26,20 @@ interval = st.selectbox("Zeitintervall", ["1m", "5m", "15m", "1h"], index=0)
 interval_binance = interval
 
 # --- Binance API Request
-limit = 200  # Kerzenanzahl
+limit = 200
 url = f"https://api.binance.com/api/v3/klines?symbol={asset}&interval={interval_binance}&limit={limit}"
 response = requests.get(url)
-data = response.json()
+
+# --- Antwort validieren
+try:
+    data = response.json()
+    if not isinstance(data, list) or len(data) == 0:
+        st.error("❌ Binance hat keine Daten geliefert. Bitte versuche es mit einem anderen Intervall (z. B. 5m oder 15m).")
+        st.stop()
+except Exception as e:
+    st.error(f"❌ Fehler beim Verarbeiten der Binance-Antwort: {e}")
+    st.write("Antwort von Binance:", response.text)
+    st.stop()
 
 # --- Umwandlung in DataFrame
 cols = ["Time", "Open", "High", "Low", "Close", "Volume", "Close_time",
@@ -100,4 +110,4 @@ if not df.empty and len(df) > 1:
 else:
     st.warning("⚠️ Keine Werte zum Anzeigen verfügbar. Eventuell liefert Binance gerade keine Daten.")
 
-st.success("✅ Binance-Version stabil. Vollständig ohne yfinance & pandas_ta.")
+st.success("✅ Binance-Version stabil. Datenquelle validiert. Keine Anzeige ohne Inhalt.")
