@@ -1,83 +1,54 @@
-import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
 import numpy as np
-import requests
-from datetime import datetime
+import datetime
+import plotly.graph_objects as go
+import streamlit as st
 
-st.set_page_config(layout="wide")
-st.title("📈 BTCUSDT Live-Demo – 1-Minuten-Chart von Binance")
+# 🕒 Simuliere 1-Minuten-Daten der letzten Stunde
+now = datetime.datetime.now()
+timestamps = pd.date_range(end=now, periods=60, freq='T')
+close_prices = np.cumsum(np.random.randn(60)) + 30000  # Beispiel: BTC-Schlusskurse
+data = pd.DataFrame({'Timestamp': timestamps, 'Close': close_prices})
+data.set_index('Timestamp', inplace=True)
 
-symbol = "BTCUSDT"
-interval = "1m"
-limit = 100
+# 📊 Indikatoren berechnen
+def calculate_ema(series, period=20):
+    return series.ewm(span=period, adjust=False).mean()
 
-url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
-
-try:
-    response = requests.get(url)
-    data = response.json()
-
-    if not isinstance(data, list) or len(data) == 0:
-        st.error("❌ Binance hat aktuell keine Daten geliefert.")
-        st.stop()
-
-    # Daten vorbereiten
-    df = pd.DataFrame(data, columns=[
-        "Time", "Open", "High", "Low", "Close", "Volume",
-        "Close_time", "Quote_asset_volume", "Number_of_trades",
-        "Taker_buy_base_vol", "Taker_buy_quote_vol", "Ignore"])
-
-    df["Time"] = pd.to_datetime(df["Time"], unit="ms")
-    df["Close"] = df["Close"].astype(float)
-    df = df[["Time", "Close"]].rename(columns={"Time": "Zeit", "Close": "Preis"})
-    df.set_index("Zeit", inplace=True)
-
-    # Indikatoren
-    df["EMA20"] = df["Preis"].ewm(span=20, adjust=False).mean()
-    delta = df["Preis"].diff()
-    gain = delta.clip(lower=0).rolling(window=14).mean()
-    loss = -delta.clip(upper=0).rolling(window=14).mean()
+def calculate_rsi(series, period=14):
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
     rs = gain / loss
-    df["RSI"] = 100 - (100 / (1 + rs))
-    exp1 = df["Preis"].ewm(span=12, adjust=False).mean()
-    exp2 = df["Preis"].ewm(span=26, adjust=False).mean()
-    df["MACD"] = exp1 - exp2
-    df["MACDs"] = df["MACD"].ewm(span=9, adjust=False).mean()
+    return 100 - (100 / (1 + rs))
 
-    # BUY-/SELL-Signale
-    df["Signal"] = 0
-    df.loc[(df["MACD"] > df["MACDs"]) & (df["RSI"] < 70), "Signal"] = 1
-    df.loc[(df["MACD"] < df["MACDs"]) & (df["RSI"] > 30), "Signal"] = -1
+data['EMA20'] = calculate_ema(data['Close'])
+data['RSI'] = calculate_rsi(data['Close'])
 
-    # Chart
-    st.subheader("📈 BTCUSDT Preis + EMA + BUY-/SELL")
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df["Preis"], mode='lines', name='Preis'))
-    fig.add_trace(go.Scatter(x=df.index, y=df["EMA20"], mode='lines', name='EMA20'))
-    fig.add_trace(go.Scatter(x=df[df["Signal"] == 1].index, y=df[df["Signal"] == 1]["Preis"],
-                             mode='markers', name='BUY', marker=dict(color='green', size=8)))
-    fig.add_trace(go.Scatter(x=df[df["Signal"] == -1].index, y=df[df["Signal"] == -1]["Preis"],
-                             mode='markers', name='SELL', marker=dict(color='red', size=8)))
-    fig.update_layout(height=500)
-    st.plotly_chart(fig, use_container_width=True)
+# 📈 Chart
+st.set_page_config(layout="wide", page_title="Simulierter BTC Chart")
+st.title("📈 KI Trading App – Simulierter BTC-Kurs mit RSI & EMA")
 
-    # RSI & MACD
-    st.subheader("📉 RSI")
-    st.line_chart(df[["RSI"]].dropna())
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=data.index, y=data['Close'], mode='lines', name='Close'))
+fig.add_trace(go.Scatter(x=data.index, y=data['EMA20'], mode='lines', name='EMA20'))
 
-    st.subheader("📈 MACD & Signal")
-    st.line_chart(df[["MACD", "MACDs"]].dropna())
+fig.update_layout(title="📉 Kursverlauf – 1-Minuten-Kerzen", height=400, xaxis_title="Zeit", yaxis_title="Preis (USD)")
+st.plotly_chart(fig, use_container_width=True)
 
-    # Aktuelle Werte
-    st.subheader("🧭 Letzte Werte")
-    st.metric("Letzter Preis", f"{df['Preis'].iloc[-1]:.2f}")
-    st.metric("RSI", f"{df['RSI'].iloc[-1]:.2f}")
-    st.metric("MACD", f"{df['MACD'].iloc[-1]:.4f}")
-    st.metric("EMA20", f"{df['EMA20'].iloc[-1]:.2f}")
+# 🔍 Werte farblich anzeigen
+def get_color(val, low, high):
+    if pd.isna(val): return "gray"
+    if val < low: return "red"
+    if val > high: return "green"
+    return "white"
 
-    st.success("✅ Live-Daten erfolgreich geladen von Binance API")
+rsi_val = round(data["RSI"].iloc[-1], 2)
+ema_val = round(data["EMA20"].iloc[-1], 2)
+close_val = round(data["Close"].iloc[-1], 2)
 
-except Exception as e:
-    st.error("❌ Fehler beim Abrufen der Daten. Bitte später erneut versuchen.")
-    st.code(str(e))
+st.markdown(f"- **Letzter Schlusskurs:** <span style='color:white'>{close_val} USD</span>", unsafe_allow_html=True)
+st.markdown(f"- **EMA20:** <span style='color:{get_color(ema_val, 0, float('inf'))}'>{ema_val}</span>", unsafe_allow_html=True)
+st.markdown(f"- **RSI:** <span style='color:{get_color(rsi_val, 30, 70)}'>{rsi_val}</span>", unsafe_allow_html=True)
+
+st.success("✅ Simulierte Kursdaten wurden erfolgreich geladen.")
