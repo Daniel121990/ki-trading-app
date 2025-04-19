@@ -1,60 +1,86 @@
-import streamlit as st
-import yfinance as yf
-import pandas as pd
-import pandas_ta as ta
-import plotly.graph_objects as go
+from binance import Client, ThreadedWebsocketManager, ThreadedDepthCacheManager
+client = Client(api_key, api_secret)
 
-st.set_page_config(layout="wide")
-st.title("📈 KI-Trading App – Live Analyse & Prognose")
+# get market depth
+depth = client.get_order_book(symbol='BNBBTC')
 
-# Auswahlfeld mit Assets
-asset = st.selectbox("Wähle ein Asset", ["XAUUSD", "TSLA", "NVDA", "XRP-USD"])
+# place a test market buy order, to place an actual order use the create_order function
+order = client.create_test_order(
+    symbol='BNBBTC',
+    side=Client.SIDE_BUY,
+    type=Client.ORDER_TYPE_MARKET,
+    quantity=100)
 
-# Daten laden
-data = yf.download(asset, period="1d", interval="1m")
-data.dropna(inplace=True)
+# get all symbol prices
+prices = client.get_all_tickers()
 
-# Technische Indikatoren berechnen
-data["EMA20"] = ta.ema(data["Close"], length=20)
-data["RSI"] = ta.rsi(data["Close"], length=14)
-macd = ta.macd(data["Close"])
-data["MACD"] = macd["MACD_12_26_9"]
-data["MACDs"] = macd["MACDs_12_26_9"]
+# withdraw 100 ETH
+# check docs for assumptions around withdrawals
+from binance.exceptions import BinanceAPIException
+try:
+    result = client.withdraw(
+        asset='ETH',
+        address='<eth_address>',
+        amount=100)
+except BinanceAPIException as e:
+    print(e)
+else:
+    print("Success")
 
-# BUY-/SELL-Signale setzen
-data["Signal"] = 0
-data.loc[(data["MACD"] > data["MACDs"]) & (data["RSI"] < 70), "Signal"] = 1  # BUY
-data.loc[(data["MACD"] < data["MACDs"]) & (data["RSI"] > 30), "Signal"] = -1  # SELL
+# fetch list of withdrawals
+withdraws = client.get_withdraw_history()
 
-# Chart erstellen
-fig = go.Figure()
-fig.add_trace(go.Scatter(x=data.index, y=data["Close"], mode='lines', name='Close'))
-fig.add_trace(go.Scatter(x=data.index, y=data["EMA20"], mode='lines', name='EMA20'))
+# fetch list of ETH withdrawals
+eth_withdraws = client.get_withdraw_history(coin='ETH')
 
-# BUY-/SELL-Punkte einzeichnen
-fig.add_trace(go.Scatter(x=data[data["Signal"] == 1].index,
-                         y=data[data["Signal"] == 1]["Close"],
-                         mode='markers', name='BUY', marker=dict(color='green', size=8)))
-fig.add_trace(go.Scatter(x=data[data["Signal"] == -1].index,
-                         y=data[data["Signal"] == -1]["Close"],
-                         mode='markers', name='SELL', marker=dict(color='red', size=8)))
+# get a deposit address for BTC
+address = client.get_deposit_address(coin='BTC')
 
-fig.update_layout(title=f"Live Chart für {asset}", height=600)
-st.plotly_chart(fig, use_container_width=True)
+# get historical kline data from any date range
 
-# RSI-Anzeige
-st.subheader("📉 RSI")
-st.line_chart(data[["RSI"]].dropna())
+# fetch 1 minute klines for the last day up until now
+klines = client.get_historical_klines("BNBBTC", Client.KLINE_INTERVAL_1MINUTE, "1 day ago UTC")
 
-# MACD-Anzeige
-st.subheader("📈 MACD & Signal")
-st.line_chart(data[["MACD", "MACDs"]].dropna())
+# fetch 30 minute klines for the last month of 2017
+klines = client.get_historical_klines("ETHBTC", Client.KLINE_INTERVAL_30MINUTE, "1 Dec, 2017", "1 Jan, 2018")
 
-# Legende aktueller Werte
-st.subheader("🧭 Indikatorwerte")
-st.metric("Letzter Schlusskurs", f"{data['Close'].iloc[-1]:.2f}")
-st.metric("RSI", f"{data['RSI'].iloc[-1]:.2f}")
-st.metric("MACD", f"{data['MACD'].iloc[-1]:.4f}")
-st.metric("EMA20", f"{data['EMA20'].iloc[-1]:.2f}")
+# fetch weekly klines since it listed
+klines = client.get_historical_klines("NEOBTC", Client.KLINE_INTERVAL_1WEEK, "1 Jan, 2017")
 
-st.info("✅ KI-Logik aktiv. Prognosemodul folgt.")
+# create order through websockets
+order_ws = client.ws_create_order( symbol="LTCUSDT", side="BUY", type="MARKET", quantity=0.1)
+
+# get account using custom headers
+account = client.get_account(headers={'MyCustomKey': 'MyCustomValue'})
+
+# socket manager using threads
+twm = ThreadedWebsocketManager()
+twm.start()
+
+# depth cache manager using threads
+dcm = ThreadedDepthCacheManager()
+dcm.start()
+
+def handle_socket_message(msg):
+    print(f"message type: {msg['e']}")
+    print(msg)
+
+def handle_dcm_message(depth_cache):
+    print(f"symbol {depth_cache.symbol}")
+    print("top 5 bids")
+    print(depth_cache.get_bids()[:5])
+    print("top 5 asks")
+    print(depth_cache.get_asks()[:5])
+    print("last update time {}".format(depth_cache.update_time))
+
+twm.start_kline_socket(callback=handle_socket_message, symbol='BNBBTC')
+
+dcm.start_depth_cache(callback=handle_dcm_message, symbol='ETHBTC')
+
+# replace with a current options symbol
+options_symbol = 'BTC-241227-41000-C'
+dcm.start_options_depth_cache(callback=handle_dcm_message, symbol=options_symbol)
+
+# join the threaded managers to the main thread
+twm.join()
+dcm.join()
