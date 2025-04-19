@@ -1,97 +1,87 @@
 import streamlit as st
+import yfinance as yf
 import pandas as pd
-import requests
 import pandas_ta as ta
 
 st.set_page_config(layout="wide")
 st.title("📈 KI-Trading App – Live Analyse")
 
-# Auswahlbereich
-st.subheader("🔎 Kategorienwahl")
-category = st.selectbox("Kategorie wählen", ["Krypto", "Aktien", "Rohstoffe"])
+# --- Kategorien & Assets
+st.subheader("📂 Kategorie wählen")
+kategorien = {
+    "Krypto": ["BTC-USD", "ETH-USD", "XRP-USD"],
+    "Aktien": ["AAPL", "TSLA", "NVDA"],
+    "Rohstoffe": ["GC=F", "SI=F", "CL=F"]
+}
 
-search_term = st.text_input("🔍 Suche nach Asset (z. B. TSLA, BTCUSDT)", "BTCUSDT")
+kategorie = st.selectbox("Kategorie", list(kategorien.keys()))
 
-interval = st.selectbox("🕒 Zeitintervall", ["1m", "5m", "15m", "1h", "4h", "1d"])
+suchbegriff = st.text_input("🔍 Suche nach Asset (z.B. TSLA)", "")
 
-# Binance-API für Live-Daten
-def fetch_binance_klines(symbol="BTCUSDT", interval="1m", limit=200):
-    url = f"https://api.binance.com/api/v3/klines?symbol={symbol.upper()}&interval={interval}&limit={limit}"
-    r = requests.get(url)
-    if r.status_code != 200:
-        return None
-    data = r.json()
-    df = pd.DataFrame(data, columns=[
-        "timestamp", "open", "high", "low", "close", "volume",
-        "close_time", "quote_asset_volume", "number_of_trades",
-        "taker_buy_base_volume", "taker_buy_quote_volume", "ignore"
-    ])
-    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-    df.set_index("timestamp", inplace=True)
-    df = df[["open", "high", "low", "close", "volume"]].astype(float)
-    return df
+verfuegbare_assets = kategorien[kategorie]
+if suchbegriff:
+    verfuegbare_assets = [a for a in verfuegbare_assets if suchbegriff.upper() in a.upper()]
 
-# Daten abrufen
-data = fetch_binance_klines(symbol=search_term, interval=interval)
+asset = st.selectbox("Asset auswählen", verfuegbare_assets)
+interval = st.selectbox("Zeitintervall", ["1m", "5m", "15m", "1h", "4h", "1d"], index=0)
 
-if data is not None and not data.empty:
-    st.success(f"📍 Live-Daten geladen: {search_term.upper()} – Intervall: {interval}")
-    st.dataframe(data.tail(20))
+st.markdown(f"### 📍 Gewähltes Asset: <span style='color:lightgreen'>{asset}</span>", unsafe_allow_html=True)
 
-    # Technische Indikatoren
-    try:
-        data["EMA20"] = ta.ema(data["close"], length=20)
-        data["RSI"] = ta.rsi(data["close"], length=14)
-    except Exception as e:
-        st.warning("⚠️ Indikatoren konnten nicht berechnet werden.")
+# --- Daten holen + absichern
+try:
+    data = yf.download(asset, period="1d", interval=interval)
+    if data is None or data.empty:
+        st.error("❌ Keine Daten gefunden – bitte anderes Asset oder Intervall wählen.")
+        st.stop()
 
-    # Indikatoren als Farbwerte anzeigen
-    st.markdown("### 📊 Technische Indikatoren (Live)")
-    col1, col2 = st.columns(2)
+    data.reset_index(inplace=True)
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = ['_'.join(col).strip() for col in data.columns.values]
+    else:
+        data.columns = [str(col) for col in data.columns]
 
-    def style_value(val, low, high):
-        if val < low:
-            return f":red[{val:.2f}]"
-        elif val > high:
-            return f":green[{val:.2f}]"
-        else:
-            return f":white[{val:.2f}]"
+    close_col = next((col for col in data.columns if "Close" in col), None)
+    if close_col is None:
+        st.warning("⚠️ Indikatoren konnten nicht berechnet werden: 'Close'")
+        st.stop()
 
-    if "RSI" in data.columns:
-        rsi = data["RSI"].dropna().iloc[-1]
-        with col1:
-            st.markdown(f"**RSI:** {style_value(rsi, 30, 70)}")
-    if "EMA20" in data.columns:
-        ema = data["EMA20"].dropna().iloc[-1]
-        close = data["close"].iloc[-1]
-        with col2:
-            diff = close - ema
-            st.markdown(f"**Abstand EMA20:** {style_value(diff, -5, 5)}")
+    data["EMA20"] = ta.ema(data[close_col], length=20)
+    data["RSI"] = ta.rsi(data[close_col], length=14)
+    macd = ta.macd(data[close_col])
 
-    # Candle Chart über Altair
-    import altair as alt
-    st.markdown("### 🕯️ Live-Candlestick Chart")
+    if macd is not None and "MACD_12_26_9" in macd.columns:
+        data["MACD"] = macd["MACD_12_26_9"]
+        data["Signal"] = macd["MACDs_12_26_9"]
+    else:
+        st.warning("⚠️ MACD konnte nicht berechnet werden – Spalte fehlt oder Daten unvollständig.")
 
-    candle_df = data.copy().reset_index()
-    candle_df["date"] = candle_df["timestamp"].dt.strftime("%Y-%m-%d %H:%M")
+except Exception as e:
+    st.error(f"❌ Fehler beim Datenabruf oder Berechnung: {e}")
+    st.stop()
 
-    base = alt.Chart(candle_df).encode(x="date:T")
+# --- Datenvorschau
+st.subheader("📊 Datenvorschau:")
+st.dataframe(data.tail(10))
 
-    rule = base.mark_rule().encode(
-        y="high:Q",
-        y2="low:Q"
-    )
-
-    bar = base.mark_bar().encode(
-        y="open:Q",
-        y2="close:Q",
-        color=alt.condition("datum.open <= datum.close",
-                            alt.value("#00FF00"),  # Grün für steigende Kerzen
-                            alt.value("#FF3131"))  # Rot für fallende Kerzen
-    )
-
-    chart = (rule + bar).properties(width=900, height=400)
-    st.altair_chart(chart, use_container_width=True)
-
+# --- Chart Close + EMA
+st.subheader("📈 Kursverlauf (Close & EMA20)")
+if close_col in data.columns and "EMA20" in data.columns:
+    st.line_chart(data[[close_col, "EMA20"]].dropna())
 else:
-    st.error("❌ Daten konnten nicht geladen werden. Bitte Symbol prüfen.")
+    st.warning("⚠️ Kursverlauf konnte nicht angezeigt werden.")
+
+# --- RSI
+st.subheader("📉 RSI")
+if "RSI" in data.columns:
+    st.line_chart(data[["RSI"]].dropna())
+else:
+    st.warning("⚠️ RSI konnte nicht angezeigt werden.")
+
+# --- MACD & Signal
+st.subheader("📈 MACD & Signal")
+if "MACD" in data.columns and "Signal" in data.columns:
+    st.line_chart(data[["MACD", "Signal"]].dropna())
+else:
+    st.warning("⚠️ MACD konnte nicht dargestellt werden.")
+
+st.success("✅ Grundfunktionen aktiv. KI-Analyse, BUY-/SELL und Candle-Prognose folgen.")
