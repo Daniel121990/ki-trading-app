@@ -1,5 +1,4 @@
 streamlit
-pandas
-plotly
-python-binance
-python-dotenv
+yfinance
+pandas==1.5.3
+pandas_ta==0.3.14b0
