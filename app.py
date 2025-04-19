@@ -1,92 +1,53 @@
-# 📊 KI-Trading App – Live Analyse & Prognose (über Yahoo Finance)
-
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import pandas_ta as ta
-import plotly.graph_objects as go
 
-# 🌙 Dunkles Layout
-st.set_page_config(layout="wide", page_title="KI-Trading App")
-st.markdown("""
-    <style>
-        body {background-color: #0e1117; color: white;}
-        .st-bb {background-color: #0e1117;}
-        .st-at {background-color: #0e1117;}
-        .st-emotion-cache-1avcm0n {background-color: #0e1117;}
-    </style>
-""", unsafe_allow_html=True)
+st.set_page_config(layout="wide")
+st.markdown("<h1 style='text-align: center;'>📈 KI-Trading App – Live Analyse</h1>", unsafe_allow_html=True)
 
-st.title("📊 KI-Trading App – Live Analyse & Prognose")
+asset = st.selectbox("🔎 Wähle ein Asset", ["AAPL", "TSLA", "NVDA", "XAUUSD", "XRP-USD"])
+st.markdown(f"### 📍 Gewähltes Asset: `{asset}`")
 
-# ✅ Kategorien und Top-Auswahl
-categories = {
-    "Krypto": ["BTC-USD", "ETH-USD", "XRP-USD", "SOL-USD", "ADA-USD", "AVAX-USD", "DOGE-USD", "BNB-USD"],
-    "Aktien": [
-        "AAPL", "TSLA", "NVDA", "MSFT", "AMZN", "GOOGL", "META", "BABA", "NFLX", "INTC",
-        "JPM", "V", "UNH", "DIS", "PFE", "KO", "MRK", "XOM", "WMT", "NKE"
-    ],
-    "Rohstoffe": ["GC=F", "SI=F", "CL=F", "NG=F", "HG=F", "ZC=F", "ZS=F", "KC=F", "SB=F", "LE=F"]
-}
+data = yf.download(asset, period="1d", interval="1m")
 
-# Dropdowns für Kategorie & Asset & Zeit
-category = st.selectbox("🧭 Wähle eine Kategorie", list(categories.keys()))
-asset_list = categories[category]
-search = st.text_input("🔎 Suche nach Asset (z.B. TSLA, ETH-USD)", "")
+if data is None or data.empty:
+    st.error("❌ Keine Daten verfügbar.")
+    st.stop()
 
-filtered_assets = [a for a in asset_list if search.upper() in a.upper()] or asset_list
-symbol = st.selectbox("📈 Wähle ein Asset", filtered_assets)
-timeframe = st.selectbox("⏳ Zeitintervall", ["1m", "5m", "15m", "1h", "1d"])
+# RSI
+delta = data["Close"].diff()
+gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+rs = gain / loss
+data["RSI"] = 100 - (100 / (1 + rs))
 
-st.markdown(f"### 📍 Gewähltes Asset: `{symbol}`")
+# MACD
+ema12 = data["Close"].ewm(span=12, adjust=False).mean()
+ema26 = data["Close"].ewm(span=26, adjust=False).mean()
+data["MACD"] = ema12 - ema26
+data["Signal"] = data["MACD"].ewm(span=9, adjust=False).mean()
 
-try:
-    # 📦 Daten abrufen
-    data = yf.download(tickers=symbol, interval=timeframe, period="1d")
-    if data.empty:
-        st.error("❌ Daten konnten nicht geladen werden. Bitte Symbol prüfen.")
-        st.stop()
+# BUY-/SELL-Signale
+data["BUY"] = (data["MACD"] > data["Signal"]) & (data["MACD"].shift(1) <= data["Signal"].shift(1))
+data["SELL"] = (data["MACD"] < data["Signal"]) & (data["MACD"].shift(1) >= data["Signal"].shift(1))
 
-    # 📊 Indikatoren berechnen
-    data["EMA20"] = ta.ema(data["Close"], length=20)
-    data["RSI"] = ta.rsi(data["Close"], length=14)
-    macd = ta.macd(data["Close"])
-    if macd is not None and "MACD_12_26_9" in macd.columns:
-        data["MACD"] = macd["MACD_12_26_9"]
-    else:
-        data["MACD"] = None
+col1, col2 = st.columns([2, 1])
 
-    # 📉 Kerzenchart
-    st.subheader("📉 Kursverlauf (1-Minuten-Kerzen)")
-    fig = go.Figure()
-    fig.add_trace(go.Candlestick(
-        x=data.index,
-        open=data["Open"],
-        high=data["High"],
-        low=data["Low"],
-        close=data["Close"],
-        name="Kerzen"
-    ))
-    fig.update_layout(xaxis_rangeslider_visible=False, height=400)
-    st.plotly_chart(fig, use_container_width=True)
+with col1:
+    st.subheader("📊 Kursverlauf (Close)")
+    st.line_chart(data["Close"])
 
-    # 🔍 Indikator-Anzeige als Werte
-    st.subheader("🔎 Indikatoren")
-    def get_color(val, low, high):
-        if pd.isna(val): return "white"
-        if val < low: return "red"
-        if val > high: return "green"
-        return "white"
+with col2:
+    st.subheader("📉 RSI")
+    st.line_chart(data["RSI"])
 
-    rsi = round(data["RSI"].iloc[-1], 2)
-    ema = round(data["EMA20"].iloc[-1], 2)
-    macd_val = round(data["MACD"].iloc[-1], 4) if not pd.isna(data["MACD"].iloc[-1]) else "n/a"
+st.subheader("📈 MACD & Signal")
+st.line_chart(data[["MACD", "Signal"]].dropna())
 
-    st.markdown(f"- **RSI:** <span style='color:{get_color(rsi, 30, 70)}'>{rsi}</span>", unsafe_allow_html=True)
-    st.markdown(f"- **EMA20:** <span style='color:{get_color(ema, 0, float('inf'))}'>{ema}</span>", unsafe_allow_html=True)
-    st.markdown(f"- **MACD:** <span style='color:{get_color(macd_val, 0, float('inf'))}'>{macd_val}</span>", unsafe_allow_html=True)
+st.subheader("🟢 BUY / 🔴 SELL Punkte")
+buy_signals = data[data["BUY"]]
+sell_signals = data[data["SELL"]]
+st.dataframe(pd.concat([buy_signals[["Close"]].rename(columns={"Close": "BUY-Signal"}),
+                        sell_signals[["Close"]].rename(columns={"Close": "SELL-Signal"})], axis=1))
 
-    st.success("✅ Live Daten und Indikatoren geladen.")
-
-except Exception as e:
-    st.error(f"❌ Daten konnten nicht geladen werden. Fehler: {e}")
+st.success("✅ MACD & BUY-/SELL-Signale aktiviert. Bereit für KI-Prognose.")
