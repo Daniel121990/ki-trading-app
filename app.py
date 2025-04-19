@@ -1,58 +1,53 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import pandas_ta as ta
 
 st.set_page_config(layout="wide")
-st.markdown("<h1 style='text-align: center;'>📈 KI-Trading App – Live Analyse</h1>", unsafe_allow_html=True)
+st.title("📈 KI-Trading App – Live Analyse & Prognose")
 
-asset = st.selectbox("🔎 Wähle ein Asset", ["AAPL", "TSLA", "NVDA", "XAUUSD", "XRP-USD"])
-st.markdown(f"### 📍 Gewähltes Asset: `{asset}`")
+# Auswahlfeld für das Asset
+asset = st.selectbox("Wähle ein Asset", ["XAUUSD", "TSLA", "NVDA", "XRP-USD"])
 
-data = yf.download(asset, period="1d", interval="1m")
+# Versuche, die Daten zu laden und auszuwerten
+try:
+    data = yf.download(asset, period="1d", interval="1m")
 
-# MultiIndex fixen, falls vorhanden
-if isinstance(data.columns, pd.MultiIndex):
-    data.columns = ['_'.join(col).strip() for col in data.columns.values]
+    if data is not None and not data.empty and "Close" in data.columns:
+        data = data.dropna(subset=["Close"]).copy()
 
-if data is None or data.empty:
-    st.error("❌ Keine Daten verfügbar.")
-    st.stop()
+        if len(data) > 30:
+            # Technische Indikatoren berechnen
+            data["EMA20"] = ta.ema(data["Close"], length=20)
+            data["RSI"] = ta.rsi(data["Close"], length=14)
+            macd = ta.macd(data["Close"])
 
-close_col = [col for col in data.columns if "Close" in col][0]
+            # MACD prüfen
+            if macd is not None and not macd.empty and "MACD_12_26_9" in macd.columns:
+                data["MACD"] = macd["MACD_12_26_9"]
+                data["MACDs"] = macd["MACDs_12_26_9"]
+            else:
+                st.warning("⚠️ MACD konnte nicht berechnet werden – Spalte fehlt oder Daten unvollständig.")
+                macd = None
 
-# RSI
-delta = data[close_col].diff()
-gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-rs = gain / loss
-data["RSI"] = 100 - (100 / (1 + rs))
+            # Chartausgabe
+            st.subheader(f"📊 Chart für: {asset}")
+            st.line_chart(data[["Close", "EMA20"]].dropna())
 
-# MACD
-ema12 = data[close_col].ewm(span=12, adjust=False).mean()
-ema26 = data[close_col].ewm(span=26, adjust=False).mean()
-data["MACD"] = ema12 - ema26
-data["Signal"] = data["MACD"].ewm(span=9, adjust=False).mean()
+            st.subheader("📉 RSI – Relative Strength Index")
+            st.line_chart(data[["RSI"]].dropna())
 
-# BUY-/SELL-Signale
-data["BUY"] = (data["MACD"] > data["Signal"]) & (data["MACD"].shift(1) <= data["Signal"].shift(1))
-data["SELL"] = (data["MACD"] < data["Signal"]) & (data["MACD"].shift(1) >= data["Signal"].shift(1))
+            if macd is not None:
+                st.subheader("📈 MACD & Signal")
+                st.line_chart(data[["MACD", "MACDs"]].dropna())
 
-col1, col2 = st.columns([2, 1])
-with col1:
-    st.subheader("📊 Kursverlauf (Close)")
-    st.line_chart(data[close_col])
+            st.success("✅ Analyse abgeschlossen.")
 
-with col2:
-    st.subheader("📉 RSI")
-    st.line_chart(data["RSI"])
+        else:
+            st.warning("⚠️ Nicht genug Daten für eine sinnvolle Analyse (mind. 30 Werte).")
 
-st.subheader("📈 MACD & Signal")
-st.line_chart(data[["MACD", "Signal"]].dropna())
+    else:
+        st.error("❌ Daten ungültig oder leer.")
 
-st.subheader("🟢 BUY / 🔴 SELL Punkte")
-buy_signals = data[data["BUY"]]
-sell_signals = data[data["SELL"]]
-st.dataframe(pd.concat([buy_signals[[close_col]].rename(columns={close_col: "BUY-Signal"}),
-                        sell_signals[[close_col]].rename(columns={close_col: "SELL-Signal"})], axis=1))
-
-st.success("✅ Alle Module funktionieren jetzt stabil. KI-Prognose kann vorbereitet werden.")
+except Exception as e:
+    st.error(f"Fehler beim Laden oder Verarbeiten der Daten: {e}")
