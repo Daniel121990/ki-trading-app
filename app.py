@@ -3,39 +3,68 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
 from sklearn.preprocessing import MinMaxScaler
 
-# 🔧 Konfiguration
-st.set_page_config(layout="wide", page_title="XRP KI-Trading App")
+# -------------------------------
+# 🔧 KONFIGURATION & DESIGN
+# -------------------------------
+st.set_page_config(layout="wide", page_title="💰 KI-Trading App PRO", page_icon="🚀")
 st.markdown("""
     <style>
-    .stApp {background-color: #0e1117; color: white;}
-    .st-bq {color: #ff4b4b;}
+    .stApp {background: #0a0a2e; color: white;}
+    h1 {color: #4af7d3; border-bottom: 2px solid #4af7d3;}
+    .stSelectbox div {background: #1a1a4a;}
+    .st-bq {font-size: 18px;}
+    .stAlert {background: #1a1a4a!important;}
     </style>
     """, unsafe_allow_html=True)
-st.title("🚀 XRP KI-Trading App (Mit Echtzeit-Signalen)")
 
-# 🌐 API-Funktionen (OHNE API-Key!)
-@st.cache_data(ttl=60)
-def get_xrp_data():
-    # CoinGecko API (XRP/USD)
-    url = "https://api.coingecko.com/api/v3/coins/ripple/market_chart?vs_currency=usd&days=30&interval=hourly"
-    data = requests.get(url).json()
-    df = pd.DataFrame(data['prices'], columns=['Time', 'Close'])
-    df['Time'] = pd.to_datetime(df['Time'], unit='ms')
-    df.set_index('Time', inplace=True)
-    return df
+# -------------------------------
+# 🌐 API-FUNKTIONEN (Echtzeit & Ohne Key)
+# -------------------------------
+def get_data(symbol, asset_type):
+    # Krypto (CoinGecko)
+    if asset_type == "Krypto":
+        coin_id = {
+            "BTC/USD": "bitcoin", 
+            "ETH/USD": "ethereum",
+            "XRP/USD": "ripple",
+            "SOL/USD": "solana"
+        }.get(symbol, "ripple")
+        url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/ohlc?vs_currency=usd&days=1"
+        data = requests.get(url).json()
+        df = pd.DataFrame(data, columns=["Time", "Open", "High", "Low", "Close"])
+        df["Time"] = pd.to_datetime(df["Time"], unit="ms")
+        df.set_index("Time", inplace=True)
+        return df.astype(float)
+    
+    # Aktien & Rohstoffe (Yahoo Finance)
+    elif asset_type == "Aktien" or asset_type == "Rohstoffe":
+        interval = "2m" if asset_type == "Aktien" else "1d"
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval={interval}"
+        data = requests.get(url, headers={"User-Agent": ""}).json()
+        prices = data["chart"]["result"][0]["indicators"]["quote"][0]
+        timestamps = data["chart"]["result"][0]["timestamp"]
+        df = pd.DataFrame({
+            "Open": prices["open"],
+            "High": prices["high"],
+            "Low": prices["low"],
+            "Close": prices["close"]
+        }, index=pd.to_datetime(timestamps, unit="s"))
+        return df.dropna()
 
-# 🧠 KI-Modell (LSTM)
-def create_lstm_model(data):
+# -------------------------------
+# 🧠 KI-MODELL (LSTM für Vorhersage)
+# -------------------------------
+def create_model(data):
     scaler = MinMaxScaler()
-    scaled_data = scaler.fit_transform(data[['Close']])
+    scaled_data = scaler.fit_transform(data[["Close"]])
     
     X, y = [], []
-    look_back = 24  # 24 Stunden
+    look_back = 60
     for i in range(look_back, len(scaled_data)):
         X.append(scaled_data[i-look_back:i, 0])
         y.append(scaled_data[i, 0])
@@ -44,71 +73,86 @@ def create_lstm_model(data):
     y = np.array(y)
     
     model = Sequential([
-        LSTM(50, return_sequences=True, input_shape=(look_back, 1)),
-        LSTM(50),
+        LSTM(64, return_sequences=True, input_shape=(look_back, 1)),
+        LSTM(64),
         Dense(1)
     ])
-    model.compile(optimizer='adam', loss='mse')
-    model.fit(X, y, epochs=15, batch_size=32, verbose=0)
+    model.compile(optimizer="adam", loss="mse")
+    model.fit(X, y, epochs=20, batch_size=32, verbose=0)
     return model, scaler
 
-# 📈 Technische Indikatoren
-def add_indicators(df):
-    df['EMA20'] = df['Close'].ewm(span=20).mean()
-    df['RSI'] = 100 - (100 / (1 + df['Close'].pct_change().rolling(14).apply(lambda x: (np.where(x < 0, -x, 0).mean() / np.where(x > 0, x, 0).mean())))
-    df['MACD'] = df['Close'].ewm(span=12).mean() - df['Close'].ewm(span=26).mean()
-    return df
+# -------------------------------
+# 📈 DASHBOARD & VISUALISIERUNG
+# -------------------------------
+st.title("🚀 KI-Trading App PRO")
+st.markdown("**Wähle ein Asset und erhalte Echtzeit-KI-Signale**")
 
-# 🎯 Signalgenerierung
-def generate_signal(model, scaler, data):
-    look_back = 24
-    scaled_data = scaler.transform(data[['Close']][-look_back:])
-    prediction = model.predict(np.array([scaled_data]))
-    predicted_price = scaler.inverse_transform(prediction)[0][0]
-    current_price = data['Close'].iloc[-1]
-    
-    if predicted_price > current_price * 1.03:
-        return "🚀 STRONG BUY", predicted_price, "#00FF00"
-    elif predicted_price > current_price:
-        return "📈 BUY", predicted_price, "#90EE90"
-    elif predicted_price < current_price * 0.97:
-        return "🔥 STRONG SELL", predicted_price, "#FF0000"
-    else:
-        return "🛑 HOLD", predicted_price, "#FFFFFF"
-
-# 🖥️ Hauptprogramm
-df = get_xrp_data()
-df = add_indicators(df)
-
-if 'model' not in st.session_state:
-    st.session_state.model, st.session_state.scaler = create_lstm_model(df)
-
-signal, price, color = generate_signal(st.session_state.model, st.session_state.scaler, df)
-
-# 📊 Dashboard
+# Asset-Auswahl
 col1, col2 = st.columns(2)
 with col1:
-    st.markdown(f"### 🧠 **KI-Empfehlung**  \n<span style='color:{color}; font-size: 24px'>{signal}</span>", unsafe_allow_html=True)
-    st.markdown(f"- **Vorhergesagter Preis:** ${price:.4f}")
-    st.markdown(f"- **Aktueller Preis:** ${df['Close'].iloc[-1]:.4f}")
+    asset_type = st.selectbox("Kategorie", ["Krypto", "Aktien", "Rohstoffe"])
+    
+assets = {
+    "Krypto": ["BTC/USD", "ETH/USD", "XRP/USD", "SOL/USD"],
+    "Aktien": ["TSLA", "AAPL", "AMZN", "NVDA"],
+    "Rohstoffe": ["GC=F (Gold)", "CL=F (Öl)", "SI=F (Silber)"]
+}[asset_type]
 
 with col2:
-    st.markdown("### 📊 Technische Indikatoren")
-    st.markdown(f"- **RSI:** {df['RSI'].iloc[-1]:.1f} ({'Überkauft 🚨' if df['RSI'].iloc[-1] > 70 else 'Überverkauft 💰' if df['RSI'].iloc[-1] < 30 else 'Neutral'})")
-    st.markdown(f"- **MACD:** {df['MACD'].iloc[-1]:.4f}")
-    st.markdown(f"- **Volatilität (24h):** {df['Close'].pct_change().std()*100:.2f}%")
+    symbol = st.selectbox("Asset", assets)
 
-# 🕯️ Candlestick-Chart
+# Daten laden
+df = get_data(symbol.split(" ")[0], asset_type)
+if df.empty:
+    st.error("⚠️ Keine Daten gefunden. Bitte anderes Asset wählen.")
+    st.stop()
+
+# KI-Modell erstellen
+if "model" not in st.session_state or st.session_state.last_symbol != symbol:
+    with st.spinner("🧠 KI-Modell trainiert..."):
+        st.session_state.model, st.session_state.scaler = create_model(df)
+        st.session_state.last_symbol = symbol
+
+# Vorhersage
+scaled_data = st.session_state.scaler.transform(df[["Close"]][-60:])
+prediction = st.session_state.model.predict(np.array([scaled_data]))
+predicted_price = st.session_state.scaler.inverse_transform(prediction)[0][0]
+current_price = df["Close"].iloc[-1]
+
+trend = "🚀 KAUFEN" if predicted_price > current_price * 1.01 else \
+        "🔥 VERKAUFEN" if predicted_price < current_price * 0.99 else "🛑 HALten"
+
+# -------------------------------
+# 📊 VISUALISIERUNGEN
+# -------------------------------
+st.markdown("---")
+col1, col2, col3 = st.columns(3)
+col1.metric("Aktueller Preis", f"${current_price:.2f}")
+col2.metric("KI-Prognose", f"${predicted_price:.2f}", delta=f"{(predicted_price/current_price-1)*100:.2f}%")
+col3.markdown(f"### <span style='color: {'#00ff00' if 'KAUFEN' in trend else '#ff0000'}'>{trend}</span>", unsafe_allow_html=True)
+
+# Candlestick-Chart
 fig = go.Figure(data=[
     go.Candlestick(
         x=df.index,
-        open=df['Open'],
-        high=df['High'],
-        low=df['Low'],
-        close=df['Close'],
-        increasing_line_color='#2ED573',
-        decreasing_line_color='#FF4757'
+        open=df["Open"],
+        high=df["High"],
+        low=df["Low"],
+        close=df["Close"],
+        increasing_line_color="#2ed573",
+        decreasing_line_color="#ff4757"
     )
 ])
-fig.update_layout(height=500, xaxis_rangeslider_visible=False)
+fig.update_layout(
+    title=f"{symbol} – Letzte 24 Stunden",
+    height=600,
+    xaxis_rangeslider_visible=False,
+    template="plotly_dark"
+)
 st.plotly_chart(fig, use_container_width=True)
+
+# -------------------------------
+# ⚠️ DISCLAIMER
+# -------------------------------
+st.markdown("---")
+st.error("""
