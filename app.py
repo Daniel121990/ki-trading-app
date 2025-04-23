@@ -27,9 +27,9 @@ class NeuroTrader:
         self.model = RandomForestRegressor(n_estimators=100)
 
     @st.cache_data(ttl=300)
-    def fetch_data(_self, symbol: str) -> pd.DataFrame:
+    def fetch_data(_self, symbol: str, interval: str = "1m") -> pd.DataFrame:
         try:
-            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=5m&range=7d"
+            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval={interval}&range=1d"
             headers = {"User-Agent": "Mozilla/5.0"}
             r = requests.get(url, headers=headers, timeout=10)
             data = r.json()["chart"]["result"][0]
@@ -59,12 +59,14 @@ class NeuroTrader:
     def render_ui(self):
         st.title("🧠 NeuroTrader PRO")
 
+        mode = st.radio("Modus wählen:", ["Classic-Modus", "Daytrading-Modus"])
         col1, col2 = st.columns([1, 3])
         with col1:
             asset_type = st.selectbox("Kategorie", list(self.asset_types.keys()))
             symbol = st.selectbox("Symbol", self.asset_types[asset_type])
+            interval = st.selectbox("Intervall", ["1m", "5m", "15m"] if mode == "Daytrading-Modus" else ["5m"])
 
-        df = self.fetch_data(symbol)
+        df = self.fetch_data(symbol, interval)
         if df.empty:
             st.warning("⚠️ Keine Daten verfügbar.")
             return
@@ -82,9 +84,7 @@ class NeuroTrader:
             st.metric("Aktueller Preis", f"${current:.2f}", f"{delta:.2f}%")
             st.markdown(f"<h2 style='color:{color}'>{trend}</h2>", unsafe_allow_html=True)
 
-        # 📊 Candlestick mit BUY/SELL Punkt
         fig = go.Figure()
-
         fig.add_trace(go.Candlestick(
             x=df.index,
             open=df["Open"], high=df["High"],
@@ -94,7 +94,6 @@ class NeuroTrader:
             name="Preis"
         ))
 
-        # BUY-/SELL-/HALTEN-Punkt auf aktueller Kerze
         signal_color = "#00ff00" if "KAUFEN" in trend else "#ff0000" if "VERKAUFEN" in trend else "#ffffff"
         fig.add_trace(go.Scatter(
             x=[df.index[-1]],
@@ -110,7 +109,7 @@ class NeuroTrader:
             template="plotly_dark",
             height=600,
             xaxis_rangeslider_visible=False,
-            title=f"{symbol} – Echtzeit KI-Trading"
+            title=f"{symbol} – {mode}"
         )
         st.plotly_chart(fig, use_container_width=True)
 
