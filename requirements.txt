@@ -2,6 +2,8 @@ streamlit==1.32.2
 pandas==2.1.4
 numpy==1.26.2
 plotly==5.18.0
-tensorflow-cpu==2.15.0
+tensorflow-cpu==2.15.0  # CPU-only-Version für Cloud-Deployment
 scikit-learn==1.3.2
 requests==2.31.0
+protobuf==3.20.3  # Häufiger Konflikt mit TensorFlow
+Etwas ist schiefgega
