@@ -1,4 +1,3 @@
-# 📂 app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -80,22 +79,44 @@ class NeuroTrader:
         color = "#00ff00" if "KAUFEN" in trend else "#ff0000" if "VERKAUFEN" in trend else "#ffffff"
 
         with col2:
-            st.metric("Aktuell", f"${current:.2f}", f"{delta:.2f}%")
+            st.metric("Aktueller Preis", f"${current:.2f}", f"{delta:.2f}%")
             st.markdown(f"<h2 style='color:{color}'>{trend}</h2>", unsafe_allow_html=True)
 
-        fig = go.Figure(go.Candlestick(
+        # 📊 Candlestick mit BUY/SELL Punkt
+        fig = go.Figure()
+
+        fig.add_trace(go.Candlestick(
             x=df.index,
             open=df["Open"], high=df["High"],
             low=df["Low"], close=df["Close"],
             increasing_line_color="#2ed573",
-            decreasing_line_color="#ff4757"
+            decreasing_line_color="#ff4757",
+            name="Preis"
         ))
-        fig.update_layout(template="plotly_dark", height=600, xaxis_rangeslider_visible=False)
+
+        # BUY-/SELL-/HALTEN-Punkt auf aktueller Kerze
+        signal_color = "#00ff00" if "KAUFEN" in trend else "#ff0000" if "VERKAUFEN" in trend else "#ffffff"
+        fig.add_trace(go.Scatter(
+            x=[df.index[-1]],
+            y=[current],
+            mode="markers+text",
+            marker=dict(color=signal_color, size=14, symbol="circle"),
+            text=[trend],
+            textposition="top center",
+            name="Signal"
+        ))
+
+        fig.update_layout(
+            template="plotly_dark",
+            height=600,
+            xaxis_rangeslider_visible=False,
+            title=f"{symbol} – Echtzeit KI-Trading"
+        )
         st.plotly_chart(fig, use_container_width=True)
 
         st.error("""
-        ❗ Hinweis: Dieses Tool ist keine Finanzberatung.  
-        Die Prognosen basieren auf historischen Daten mit begrenzter Aussagekraft.
+        ❗ Hinweis: Diese App ist keine Finanzberatung.  
+        Prognosen sind spekulativ. Handel nur mit eigenem Risiko!
         """)
 
 if __name__ == "__main__":
