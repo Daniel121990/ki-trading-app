@@ -6,6 +6,8 @@ from datetime import datetime
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import MinMaxScaler
 import plotly.graph_objects as go
+import joblib
+import os
 
 st.set_page_config(page_title="🧠 NeuroTrader PRO", layout="wide")
 
@@ -43,7 +45,7 @@ class NeuroTrader:
             st.error(f"Datenfehler: {e}")
             return pd.DataFrame()
 
-    def train_model(self, df: pd.DataFrame):
+    def train_model(self, df: pd.DataFrame, symbol: str):
         data = self.scaler.fit_transform(df[["Close"]])
         lookback = 60
         X, y = [], []
@@ -51,6 +53,15 @@ class NeuroTrader:
             X.append(data[i-lookback:i].flatten())
             y.append(data[i, 0])
         self.model.fit(X, y)
+        joblib.dump(self.model, f"model_{symbol}.pkl")
+        joblib.dump(self.scaler, f"scaler_{symbol}.pkl")
+
+    def load_model(self, symbol: str):
+        if os.path.exists(f"model_{symbol}.pkl") and os.path.exists(f"scaler_{symbol}.pkl"):
+            self.model = joblib.load(f"model_{symbol}.pkl")
+            self.scaler = joblib.load(f"scaler_{symbol}.pkl")
+            return True
+        return False
 
     def predict(self, df: pd.DataFrame) -> float:
         last_seq = self.scaler.transform(df[["Close"]][-60:]).flatten().reshape(1, -1)
@@ -108,12 +119,11 @@ class NeuroTrader:
     def render_ui(self):
         st.title("🧠 NeuroTrader PRO")
 
-        mode = st.radio("Modus wählen:", ["Classic-Modus", "Daytrading-Modus"])
         col1, col2 = st.columns([1, 3])
         with col1:
             asset_type = st.selectbox("Kategorie", list(self.asset_types.keys()))
             symbol = st.selectbox("Symbol", self.asset_types[asset_type])
-            interval = st.selectbox("Intervall", ["1m", "5m", "15m"] if mode == "Daytrading-Modus" else ["5m"])
+            interval = st.selectbox("Intervall", ["1m", "5m", "15m"])
 
         df = self.fetch_data(symbol, interval)
         if df.empty:
@@ -122,38 +132,40 @@ class NeuroTrader:
 
         df = self.compute_indicators(df)
 
-        if st.button("🔄 Neu analysieren"):
-            with st.spinner("KI analysiert..."):
-                self.train_model(df)
-                prediction = self.predict(df)
-                current = df['Close'].iloc[-1]
-                signal, reason, delta = self.analyze_signal(df, prediction, current)
+        # Always show chart
+        fig = go.Figure()
+        fig.add_trace(go.Candlestick(
+            x=df.index, open=df['Open'], high=df['High'],
+            low=df['Low'], close=df['Close'],
+            increasing_line_color="#2ed573", decreasing_line_color="#ff4757"))
+        fig.update_layout(template="plotly_dark", height=600, xaxis_rangeslider_visible=False)
+        st.plotly_chart(fig, use_container_width=True)
 
-                signal_color = "#00ff00" if signal == "KAUFEN" else "#ff0000" if signal == "VERKAUFEN" else "#ffffff"
-                st.metric("Aktueller Preis", f"${current:.2f}", f"{delta:.2f}%")
-                st.markdown(f"<h2 style='color:{signal_color}'>{signal}</h2>", unsafe_allow_html=True)
-                if reason:
-                    st.info("Begründung: " + ", ".join(reason))
-                quote = sum(s['Korrekt'] for s in self.signals) / len(self.signals) * 100 if self.signals else 0
-                st.success(f"Trefferquote: {quote:.0f}% der letzten {len(self.signals)} Signale")
+        # Analyze Button
+        if st.button("🔍 KI-Signal analysieren"):
+            if not self.load_model(symbol):
+                self.train_model(df, symbol)
+            prediction = self.predict(df)
+            current = df['Close'].iloc[-1]
+            signal, reason, delta = self.analyze_signal(df, prediction, current)
 
-                fig = go.Figure()
-                fig.add_trace(go.Candlestick(
-                    x=df.index, open=df['Open'], high=df['High'],
-                    low=df['Low'], close=df['Close'],
-                    increasing_line_color="#2ed573", decreasing_line_color="#ff4757"))
-                fig.update_layout(template="plotly_dark", height=600, xaxis_rangeslider_visible=False)
-                st.plotly_chart(fig, use_container_width=True)
+            signal_color = "#00ff00" if signal == "KAUFEN" else "#ff0000" if signal == "VERKAUFEN" else "#ffffff"
+            st.metric("Aktueller Preis", f"${current:.2f}", f"{delta:.2f}%")
+            st.markdown(f"<h2 style='color:{signal_color}'>{signal}</h2>", unsafe_allow_html=True)
+            if reason:
+                st.info("Begründung: " + ", ".join(reason))
+            quote = sum(s['Korrekt'] for s in self.signals) / len(self.signals) * 100 if self.signals else 0
+            st.success(f"Trefferquote: {quote:.0f}% der letzten {len(self.signals)} Signale")
 
-                # Performance Tabelle
-                performance_df = self.compute_performance_table(df)
-                st.markdown("### Performance (Veränderung)")
-                st.dataframe(performance_df, use_container_width=True)
+            # Performance Tabelle
+            performance_df = self.compute_performance_table(df)
+            st.markdown("### Performance (Veränderung)")
+            st.dataframe(performance_df, use_container_width=True)
 
-                st.error("""
-                ❗ Hinweis: Diese App ist keine Finanzberatung.  
-                Prognosen sind spekulativ. Handel nur mit eigenem Risiko!
-                """)
+            st.error("""
+            ❗ Hinweis: Diese App ist keine Finanzberatung.  
+            Prognosen sind spekulativ. Handel nur mit eigenem Risiko!
+            """)
 
 if __name__ == "__main__":
     app = NeuroTrader()
