@@ -58,8 +58,10 @@ modul = st.selectbox("Modul auswählen:", [
 if modul == "Live-Chart & KI-Prognose":
     symbol = st.selectbox("Asset wählen", ["^GDAXI", "BTC-USD", "ETH-USD", "TSLA"])
     df = get_chart_data(symbol)
-    if not df.empty:
-        st.success("Daten geladen ✅")
+    if df.empty:
+        st.warning("⚠️ Keine Kursdaten verfügbar – eventuell Internetproblem oder Symbol falsch.")
+    else:
+        st.success("✅ Daten erfolgreich geladen")
         model = SimplePredictor()
         model.train(df)
         prediction = model.predict(df)
@@ -101,7 +103,9 @@ elif modul == "GER40-Hebelstrategie":
         pot_gewinn = kapital * (ziel / 100)
         st.success(f"Risiko: {risiko:.2f} €, Gewinnchance: {pot_gewinn:.2f} €")
     df = get_chart_data("^GDAXI")
-    if not df.empty:
+    if df.empty:
+        st.warning("⚠️ Keine Kursdaten verfügbar – eventuell Internetproblem oder Symbol falsch.")
+    else:
         fig = go.Figure(data=[go.Candlestick(
             x=df.index, open=df["Open"], high=df["High"],
             low=df["Low"], close=df["Close"]
@@ -112,7 +116,9 @@ elif modul == "GER40-Hebelstrategie":
 elif modul == "Zielchecker":
     st.subheader("🎯 Zielchecker")
     df = get_chart_data("^GDAXI")
-    if not df.empty:
+    if df.empty:
+        st.warning("⚠️ Keine Kursdaten verfügbar – eventuell Internetproblem oder Symbol falsch.")
+    else:
         aktueller = df["Close"].iloc[-1]
         zielwert = st.number_input("Kursziel (€)", value=aktueller)
         if st.button("Ziel prüfen"):
