@@ -1,36 +1,50 @@
  (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
-diff --git a/app.py b/app.py
-index c36c54610ca5f474e4559836ee0e352bf53b0cbe..062a7fb3fe5e9e8057bb75a9ec1ce8d4af7509e1 100644
---- a/app.py
-+++ b/app.py
-@@ -1,22 +1,26 @@
- import streamlit as st
- import yfinance as yf
- import pandas as pd
- import pandas_ta as ta
-+from zielchecker import run_zielchecker
- 
- st.set_page_config(layout="wide")
- st.title("KI-Trading App – Live Analyse & Prognose")
- 
- asset = st.selectbox("Wähle ein Asset", ["XAUUSD", "TSLA", "NVDA", "XRP-USD"])
- data = yf.download(asset, period="1d", interval="1m")
- 
- data["EMA20"] = ta.ema(data["Close"], length=20)
- data["RSI"] = ta.rsi(data["Close"], length=14)
- macd = ta.macd(data["Close"])
- data["MACD"] = macd["MACD_12_26_9"]
- data["MACDs"] = macd["MACDs_12_26_9"]
- 
- st.line_chart(data[["Close", "EMA20"]].dropna())
- st.line_chart(data[["RSI"]].dropna())
- st.line_chart(data[["MACD", "MACDs"]].dropna())
- 
--st.success("KI-Signale & Candle-Prognose folgen im Ausbau")
-+st.success("KI-Signale & Candle-Prognose folgen im Ausbau")
+diff --git a//dev/null b/zielchecker.py
+index 0000000000000000000000000000000000000000..948a6451671a1fdf20f4446b5001a9d3b2e4204d 100644
+--- a//dev/null
++++ b/zielchecker.py
+@@ -0,0 +1,41 @@
++import streamlit as st
++import yfinance as yf
++import pandas_ta as ta
 +
-+# Zusatzmodul: Zielchecker
-+run_zielchecker(asset)
++
++def run_zielchecker(asset: str) -> None:
++    """Simple probability helper for a price target."""
++
++    st.subheader("Zielchecker")
++
++    try:
++        data = yf.download(asset, period="1mo", interval="1h")
++    except Exception as err:
++        st.error(f"Daten konnten nicht geladen werden: {err}")
++        return
++
++    if data.empty:
++        st.warning("Keine Daten ver\xFCgbar")
++        return
++
++    target = st.number_input(
++        "Kursziel eingeben",
++        value=float(data["Close"].iloc[-1]),
++        key="target_input",
++    )
++
++    if st.button("Check Ziel", key="zielcheck_btn"):
++        if len(data) < 20:
++            st.warning("Nicht genug Daten f\xFCr Analyse")
++            return
++        ema50 = ta.ema(data["Close"], length=50)
++        ema200 = ta.ema(data["Close"], length=200)
++        trend = "Aufwärts" if ema50.iloc[-1] > ema200.iloc[-1] else "Abwärts"
++        support = data["Low"].rolling(window=20).min().iloc[-1]
++        resistance = data["High"].rolling(window=20).max().iloc[-1]
++        probability = 0.7 if support <= target <= resistance else 0.3
++
++        st.metric("Wahrscheinlichkeit", f"{probability * 100:.0f}%")
++        st.metric("Trendrichtung", trend)
++        st.metric("Support", f"{support:.2f}")
++        st.metric("Resistance", f"{resistance:.2f}")
  
 EOF
 )
