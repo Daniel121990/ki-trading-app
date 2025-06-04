@@ -33,9 +33,16 @@ class NeuroTrader:
             url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=5m&range=7d"
             headers = {"User-Agent": "Mozilla/5.0"}
             r = requests.get(url, headers=headers, timeout=10)
-            data = r.json()["chart"]["result"][0]
-            ts = pd.to_datetime(data["timestamp"], unit="s")
-            quotes = data["indicators"]["quote"][0]
+            raw = r.json()
+            if "chart" not in raw or raw["chart"].get("error") or not raw["chart"].get("result"):
+                st.warning("Keine gültigen Kursdaten vom Server.")
+                return pd.DataFrame()
+            data = raw["chart"]["result"][0]
+            ts = pd.to_datetime(data.get("timestamp", []), unit="s")
+            quotes = data.get("indicators", {}).get("quote", [{}])[0]
+            if not ts.any() or "close" not in quotes:
+                st.warning("Unvollständige Kursdaten.")
+                return pd.DataFrame()
             df = pd.DataFrame(quotes, index=ts)[["open", "high", "low", "close"]]
             df.columns = ["Open", "High", "Low", "Close"]
             return df.dropna()
