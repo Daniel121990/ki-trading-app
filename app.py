@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import plotly.graph_objects as go
 
 # ==== INDIKATOREN UND SIGNAL-LOGIK ====
 
@@ -53,22 +54,44 @@ def zielchecker(df, zielkurs):
         "unterstützung_unten": min_low
     }
 
+def plot_chart(df):
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(
+        x=df['time'],
+        open=df['open'],
+        high=df['high'],
+        low=df['low'],
+        close=df['close'],
+        name='Candles'
+    ))
+    fig.add_trace(go.Scatter(x=df['time'], y=df['EMA20'], mode='lines', name='EMA20'))
+    fig.add_trace(go.Scatter(x=df['time'], y=df['EMA50'], mode='lines', name='EMA50'))
+    fig.update_layout(
+        xaxis_rangeslider_visible=False,
+        margin=dict(l=20, r=20, t=30, b=20),
+        height=500
+    )
+    return fig
+
 # ==== STREAMLIT UI ====
 
 st.set_page_config(page_title="GER40 Hebelstrategie + Zielchecker", layout="wide")
-
 st.title("📊 GER40-Hebelstrategie & Zielchecker")
 
 # === DATEN EINLESEN ===
-# Ersetze diese CSV durch deine Live-Datenquelle
 try:
-    df = pd.read_csv("ger40_minute_data.csv")  # Muss Spalten: time, open, high, low, close, volume enthalten
+    df = pd.read_csv("ger40_minute_data.csv")  # Spalten: time, open, high, low, close, volume
 except:
-    st.error("⚠️ Datenquelle nicht gefunden. Bitte lade eine Datei 'ger40_minute_data.csv' hoch.")
+    st.error("⚠️ Datei 'ger40_minute_data.csv' nicht gefunden.")
     st.stop()
 
 df = calculate_indicators(df)
 df["TradeSignal"] = detect_ger40_signals(df)
+
+# === CHART-ANZEIGE ===
+st.subheader("📉 Live-Chart")
+fig = plot_chart(df.tail(100))  # Nur die letzten 100 Kerzen
+st.plotly_chart(fig, use_container_width=True)
 
 # === SIGNALAUSGABE ===
 st.subheader("📈 Aktuelles Handelssignal")
@@ -98,6 +121,3 @@ c3.metric("Wahrscheinlichkeit", f"{check['wahrscheinlichkeit']} %")
 
 st.write(f"📍 **Widerstand oben:** {round(check['widerstand_oben'], 2)}")
 st.write(f"📍 **Unterstützung unten:** {round(check['unterstützung_unten'], 2)}")
-
-# === HINWEIS ===
-st.info("🔄 Für Live-Daten kann eine API (z. B. Yahoo Finance oder Finnhub) angebunden werden.")
