@@ -87,12 +87,20 @@ class NeuroTrader:
     def render_ui(self):
         st.title("🧠 NeuroTrader PRO")
 
-        view = st.selectbox("Modul wählen", ["Live-Chart", "Zielchecker"])
+        view = st.selectbox("Modul wählen", ["Modul wählen…", "Live-Chart", "Zielchecker"])
+
+        if view == "Modul wählen…":
+            st.info("Bitte ein Modul auswählen.")
+            return
 
         col1, col2 = st.columns([1, 3])
         with col1:
             asset_type = st.selectbox("Kategorie", list(self.asset_types.keys()))
             symbol = st.selectbox("Symbol", self.asset_types[asset_type])
+
+        if not symbol:
+            st.warning("Bitte ein Symbol auswählen.")
+            return
 
         if view == "Zielchecker":
             self.run_zielchecker(symbol)
