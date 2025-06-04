@@ -25,7 +25,7 @@ class NeuroTrader:
     @st.cache_data(ttl=300)
     def fetch_data(_self) -> pd.DataFrame:
         try:
-            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{_self.symbol}?interval=5m&range=7d"
+            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{_self.symbol}?interval=1m&range=1d"
             headers = {"User-Agent": "Mozilla/5.0"}
             r = requests.get(url, headers=headers, timeout=10)
             data = r.json()["chart"]["result"][0]
@@ -98,7 +98,13 @@ class NeuroTrader:
             template="plotly_dark",
             height=600,
             xaxis_rangeslider_visible=False,
-            title="GER40 – Echtzeit KI-Prognose"
+            title="GER40 – Echtzeit KI-Prognose",
+            xaxis=dict(
+                title="Uhrzeit",
+                tickformat="%H:%M",
+                tickmode="auto",
+                nticks=10
+            )
         )
         st.plotly_chart(fig, use_container_width=True)
 
