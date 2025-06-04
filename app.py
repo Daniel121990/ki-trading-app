@@ -1,37 +1,36 @@
-import streamlit as st
-import pandas as pd
-import requests
-import plotly.graph_objects as go
-
-st.set_page_config(page_title="DAX Test", layout="wide")
-st.title("📈 DAX (GER40) Live-Chart – Minimale Version")
-
-# Kursdaten holen
-def get_dax():
-    try:
-        url = "https://query1.finance.yahoo.com/v8/finance/chart/^GDAXI?interval=5m&range=1d"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, headers=headers)
-        data = r.json()["chart"]["result"][0]
-        ts = pd.to_datetime(data["timestamp"], unit="s")
-        q = data["indicators"]["quote"][0]
-        df = pd.DataFrame(q, index=ts)[["open", "high", "low", "close"]]
-        df.columns = ["Open", "High", "Low", "Close"]
-        return df
-    except Exception as e:
-        st.error(f"Fehler beim Datenabruf: {e}")
-        return pd.DataFrame()
-
-# Chart anzeigen
-df = get_dax()
-if not df.empty:
-    st.success("Daten erfolgreich geladen ✅")
-    fig = go.Figure(data=[go.Candlestick(
-        x=df.index,
-        open=df["Open"], high=df["High"],
-        low=df["Low"], close=df["Close"]
-    )])
-    fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=600)
-    st.plotly_chart(fig, use_container_width=True)
-else:
-    st.warning("⚠️ Keine Daten empfangen – Internetverbindung prüfen?")
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
+diff --git a/app.py b/app.py
+index c36c54610ca5f474e4559836ee0e352bf53b0cbe..062a7fb3fe5e9e8057bb75a9ec1ce8d4af7509e1 100644
+--- a/app.py
++++ b/app.py
+@@ -1,22 +1,26 @@
+ import streamlit as st
+ import yfinance as yf
+ import pandas as pd
+ import pandas_ta as ta
++from zielchecker import run_zielchecker
+ 
+ st.set_page_config(layout="wide")
+ st.title("KI-Trading App – Live Analyse & Prognose")
+ 
+ asset = st.selectbox("Wähle ein Asset", ["XAUUSD", "TSLA", "NVDA", "XRP-USD"])
+ data = yf.download(asset, period="1d", interval="1m")
+ 
+ data["EMA20"] = ta.ema(data["Close"], length=20)
+ data["RSI"] = ta.rsi(data["Close"], length=14)
+ macd = ta.macd(data["Close"])
+ data["MACD"] = macd["MACD_12_26_9"]
+ data["MACDs"] = macd["MACDs_12_26_9"]
+ 
+ st.line_chart(data[["Close", "EMA20"]].dropna())
+ st.line_chart(data[["RSI"]].dropna())
+ st.line_chart(data[["MACD", "MACDs"]].dropna())
+ 
+-st.success("KI-Signale & Candle-Prognose folgen im Ausbau")
++st.success("KI-Signale & Candle-Prognose folgen im Ausbau")
++
++# Zusatzmodul: Zielchecker
++run_zielchecker(asset)
+ 
+EOF
+)
