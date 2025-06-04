@@ -7,7 +7,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import MinMaxScaler
 import plotly.graph_objects as go
 
-st.set_page_config(page_title="🧠 NeuroTrader PRO", layout="wide")
+st.set_page_config(page_title="🧠 NeuroTrader PRO – GER40", layout="wide")
 
 st.markdown("""
 <style>
@@ -18,18 +18,14 @@ h1 { color: #4af7d3; }
 
 class NeuroTrader:
     def __init__(self):
-        self.asset_types = {
-            "Krypto": ["BTC-USD", "ETH-USD", "XRP-USD", "SOL-USD"],
-            "Aktien": ["TSLA", "AAPL", "AMZN", "NVDA"],
-            "Rohstoffe": ["GC=F", "CL=F", "SI=F"]
-        }
+        self.symbol = "^GDAXI"  # GER40 Index über Yahoo Finance
         self.scaler = MinMaxScaler()
         self.model = RandomForestRegressor(n_estimators=100)
 
     @st.cache_data(ttl=300)
-    def fetch_data(_self, symbol: str) -> pd.DataFrame:
+    def fetch_data(_self) -> pd.DataFrame:
         try:
-            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=5m&range=7d"
+            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{_self.symbol}?interval=5m&range=7d"
             headers = {"User-Agent": "Mozilla/5.0"}
             r = requests.get(url, headers=headers, timeout=10)
             data = r.json()["chart"]["result"][0]
@@ -57,14 +53,9 @@ class NeuroTrader:
         return self.scaler.inverse_transform([[pred_scaled]])[0][0]
 
     def render_ui(self):
-        st.title("🧠 NeuroTrader PRO")
+        st.title("📈 GER40 Echtzeit KI-Trading")
 
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            asset_type = st.selectbox("Kategorie", list(self.asset_types.keys()))
-            symbol = st.selectbox("Symbol", self.asset_types[asset_type])
-
-        df = self.fetch_data(symbol)
+        df = self.fetch_data()
         if df.empty:
             st.warning("⚠️ Keine Daten verfügbar.")
             return
@@ -78,11 +69,9 @@ class NeuroTrader:
         trend = "🚀 KAUFEN" if delta > 1 else "🔥 VERKAUFEN" if delta < -1 else "🛑 HALTEN"
         color = "#00ff00" if "KAUFEN" in trend else "#ff0000" if "VERKAUFEN" in trend else "#ffffff"
 
-        with col2:
-            st.metric("Aktueller Preis", f"${current:.2f}", f"{delta:.2f}%")
-            st.markdown(f"<h2 style='color:{color}'>{trend}</h2>", unsafe_allow_html=True)
+        st.metric("Aktueller GER40", f"{current:.2f} Punkte", f"{delta:.2f}%")
+        st.markdown(f"<h2 style='color:{color}'>{trend}</h2>", unsafe_allow_html=True)
 
-        # 📊 Candlestick mit BUY/SELL Punkt
         fig = go.Figure()
 
         fig.add_trace(go.Candlestick(
@@ -91,10 +80,9 @@ class NeuroTrader:
             low=df["Low"], close=df["Close"],
             increasing_line_color="#2ed573",
             decreasing_line_color="#ff4757",
-            name="Preis"
+            name="GER40"
         ))
 
-        # BUY-/SELL-/HALTEN-Punkt auf aktueller Kerze
         signal_color = "#00ff00" if "KAUFEN" in trend else "#ff0000" if "VERKAUFEN" in trend else "#ffffff"
         fig.add_trace(go.Scatter(
             x=[df.index[-1]],
@@ -110,7 +98,7 @@ class NeuroTrader:
             template="plotly_dark",
             height=600,
             xaxis_rangeslider_visible=False,
-            title=f"{symbol} – Echtzeit KI-Trading"
+            title="GER40 – Echtzeit KI-Prognose"
         )
         st.plotly_chart(fig, use_container_width=True)
 
